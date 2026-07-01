@@ -21,6 +21,7 @@ model User {
   comparisonsAsA Comparison[]      @relation("UserA")
   comparisonsAsB Comparison[]      @relation("UserB")
   sessions       ComparisonSession[]
+  pushTokens     PushToken[]
 }
 
 model RefreshToken {
@@ -54,6 +55,14 @@ model ComparisonSession {
   createdAt   DateTime  @default(now())
   initiator   User      @relation(fields: [initiatorId], references: [id], onDelete: Cascade)
   comparison  Comparison?
+}
+
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Comparison {

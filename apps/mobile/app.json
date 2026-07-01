@@ -19,6 +19,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "expo-notifications",
       ["expo-contacts", { "contactsPermission": "Allow Between Us to access your contacts to find mutual connections. Raw contacts are never uploaded — only hashed identifiers." }]
     ],
     "experiments": { "typedRoutes": false }

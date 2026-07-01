@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, FlatList, Switch } from 'react-native';
 import Toast from 'react-native-toast-message';
+import * as Contacts from 'expo-contacts';
 import { getApiClient } from '@bus/shared';
 import { useAuthStore } from '../../src/stores/authStore';
+import { getExcludedContactIds, toggleExclusion } from '../../src/services/exclusions';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
 
 export default function PrivacyScreen() {
   const { logout } = useAuthStore();
   const [deleting, setDeleting] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showExclusions, setShowExclusions] = useState(false);
+  const [contactList, setContactList] = useState<Array<{ id: string; name: string; excluded: boolean }>>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   const deleteContacts = () => {
     Alert.alert('Delete Contact Hashes', "This removes all your contact fingerprints from our servers. You'll need to re-sync before comparing again.", [
@@ -43,9 +48,63 @@ export default function PrivacyScreen() {
     ]);
   };
 
+  const loadContacts = async () => {
+    setLoadingContacts(true);
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') { Toast.show({ type: 'error', text1: 'Permission required' }); return; }
+      const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.Name, Contacts.Fields.ID] });
+      const excluded = await getExcludedContactIds();
+      setContactList(
+        data
+          .filter(c => c.name && c.id)
+          .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+          .map(c => ({ id: c.id!, name: c.name!, excluded: excluded.has(c.id!) }))
+      );
+      setShowExclusions(true);
+    } finally {
+      setLoadingContacts(false);
+    }
+  };
+
+  const handleToggle = async (contactId: string) => {
+    const nowExcluded = await toggleExclusion(contactId);
+    setContactList(prev => prev.map(c => c.id === contactId ? { ...c, excluded: nowExcluded } : c));
+  };
+
+  if (showExclusions) {
+    return (
+      <View style={styles.exclusionOverlay}>
+        <View style={styles.exclusionHeader}>
+          <Text style={styles.exclusionTitle}>Manage Exclusions</Text>
+          <TouchableOpacity onPress={() => setShowExclusions(false)}>
+            <Text style={styles.closeBtn}>Done</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.exclusionSub}>Excluded contacts are never hashed or uploaded.</Text>
+        <FlatList
+          data={contactList}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.exclusionItem}>
+              <Text style={styles.exclusionName}>{item.name}</Text>
+              <Switch
+                value={item.excluded}
+                onValueChange={() => handleToggle(item.id)}
+                trackColor={{ true: Colors.danger + '80', false: Colors.border }}
+                thumbColor={item.excluded ? Colors.danger : Colors.textSecondary}
+              />
+            </View>
+          )}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Privacy Controls</Text>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>What Between Us stores</Text>
         {[
@@ -60,6 +119,17 @@ export default function PrivacyScreen() {
           </View>
         ))}
       </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Contact Exclusions</Text>
+        <Text style={styles.itemText}>
+          Excluded contacts are never hashed or uploaded. Manage which contacts are included in future syncs.
+        </Text>
+        <TouchableOpacity style={[styles.dangerBtn, { marginTop: Spacing.md, borderColor: Colors.primary }]} onPress={loadContacts} disabled={loadingContacts} activeOpacity={0.85}>
+          {loadingContacts ? <ActivityIndicator color={Colors.primary} /> : <Text style={[styles.dangerText, { color: Colors.primary }]}>Manage Exclusions</Text>}
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Delete your data</Text>
         <TouchableOpacity style={styles.dangerBtn} onPress={deleteContacts} disabled={deleting} activeOpacity={0.85}>
@@ -83,4 +153,11 @@ const styles = StyleSheet.create({
   itemText: { flex: 1, fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 21 },
   dangerBtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radii.button, padding: Spacing.md, alignItems: 'center', marginBottom: Spacing.md },
   dangerText: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.danger },
+  exclusionOverlay: { flex: 1, backgroundColor: Colors.background, padding: Spacing.xxl },
+  exclusionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm, marginTop: Spacing.xxxl },
+  exclusionTitle: { fontSize: FontSize.subheading, fontFamily: Fonts.bold, color: Colors.textPrimary },
+  closeBtn: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.primary },
+  exclusionSub: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.xl },
+  exclusionItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  exclusionName: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textPrimary, flex: 1 },
 });

@@ -5,6 +5,7 @@ import authRouter from './routes/auth';
 import contactsRouter from './routes/contacts';
 import comparisonRouter from './routes/comparison';
 import userRouter from './routes/user';
+import notificationsRouter from './routes/notifications';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -14,6 +15,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/contacts', contactsRouter);
 app.use('/api/comparison', comparisonRouter);
 app.use('/api/user', userRouter);
+app.use('/api/notifications', notificationsRouter);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 

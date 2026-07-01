@@ -52,6 +52,15 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
       prisma.comparisonSession.update({ where: { id: session.id }, data: { usedAt: new Date() } }),
     ]);
 
+    // Notify initiator (fire-and-forget)
+    import('../services/push').then(({ sendPushToUser }) =>
+      sendPushToUser(session.initiatorId, {
+        title: 'Someone joined!',
+        body: `Your comparison found ${mutual.length} mutual contact${mutual.length !== 1 ? 's' : ''}`,
+        data: { comparisonId: comparison.id },
+      })
+    ).catch(() => {});
+
     res.json({
       id: comparison.id,
       mutualCount: mutual.length,
@@ -125,6 +134,18 @@ comparisonRouter.get('/', async (req, res, next) => {
       select: { id: true, mutualCount: true, createdAt: true, userAId: true, userBId: true },
     });
     res.json(comparisons);
+  } catch (err) { next(err); }
+});
+
+comparisonRouter.delete('/:id', async (req, res, next) => {
+  try {
+    const comparison = await prisma.comparison.findUnique({ where: { id: req.params.id } });
+    if (!comparison) { res.status(404).json({ message: 'Not found' }); return; }
+    if (comparison.userAId !== req.userId && comparison.userBId !== req.userId) {
+      res.status(403).json({ message: 'Forbidden' }); return;
+    }
+    await prisma.comparison.delete({ where: { id: req.params.id } });
+    res.json({ message: 'Deleted' });
   } catch (err) { next(err); }
 });
 

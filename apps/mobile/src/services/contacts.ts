@@ -6,11 +6,13 @@
 import * as Contacts from 'expo-contacts';
 import { hashPhoneWithSalt, normalizePhone } from './hashing';
 import { buildFrequencyMap, assignBucket } from './frequency';
+import { getExcludedContactIds } from './exclusions';
 
 export interface HashedContact {
   hash: string;
   frequencyBucket: 'frequent' | 'occasional' | 'rare' | 'unknown';
   localName?: string;
+  contactId?: string;
 }
 
 export async function requestContactsPermission(): Promise<boolean> {
@@ -22,17 +24,19 @@ export async function hashAllContacts(
   salt: string,
   defaultCountry = 'ET'
 ): Promise<HashedContact[]> {
-  const [{ data }, freqMap] = await Promise.all([
+  const [{ data }, freqMap, excludedIds] = await Promise.all([
     Contacts.getContactsAsync({
-      fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+      fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name, Contacts.Fields.ID],
     }),
     buildFrequencyMap(defaultCountry),
+    getExcludedContactIds(),
   ]);
 
   const results: HashedContact[] = [];
   const seen = new Set<string>();
 
   for (const contact of data) {
+    if (contact.id && excludedIds.has(contact.id)) continue;
     if (!contact.phoneNumbers?.length) continue;
     for (const phone of contact.phoneNumbers) {
       if (!phone.number) continue;
@@ -45,6 +49,7 @@ export async function hashAllContacts(
         hash,
         frequencyBucket: assignBucket(normalized, freqMap),
         localName: contact.name,
+        contactId: contact.id,
       });
     }
   }
