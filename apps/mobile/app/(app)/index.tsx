@@ -25,7 +25,11 @@ export default function HomeScreen() {
         hashes: hashes.map((h) => ({ hash: h.hash, frequencyBucket: h.frequencyBucket })),
       });
       setSynced(true);
-      Toast.show({ type: 'success', text1: 'Contacts synced', text2: `${hashes.length} hashed fingerprints uploaded` });
+      const withFrequency = hashes.filter(h => h.frequencyBucket !== 'unknown').length;
+      const freqNote = withFrequency > 0
+        ? `${hashes.length} contacts · ${withFrequency} with call frequency`
+        : `${hashes.length} contacts synced`;
+      Toast.show({ type: 'success', text1: 'Contacts synced', text2: freqNote });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed';
       Toast.show({ type: 'error', text1: 'Sync failed', text2: msg });
