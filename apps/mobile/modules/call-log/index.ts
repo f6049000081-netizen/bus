@@ -1,6 +1,8 @@
 export interface CallFrequency {
   number: string;
-  count: number;
+  weekCount: number;
+  monthCount: number;
+  totalCount: number;
 }
 
 // Native call-log access requires a config plugin to inject into the generated

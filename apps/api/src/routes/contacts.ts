@@ -11,6 +11,9 @@ const hashSchema = z.object({
   hashes: z.array(z.object({
     hash: z.string().length(64),
     frequencyBucket: z.enum(['frequent', 'occasional', 'rare', 'unknown']),
+    weekCount: z.number().int().min(0).default(0),
+    monthCount: z.number().int().min(0).default(0),
+    totalCount: z.number().int().min(0).default(0),
   })).max(5000),
 });
 
@@ -25,6 +28,9 @@ contactsRouter.post('/sync', async (req, res, next) => {
           userId: req.userId,
           contactHash: h.hash,
           frequencyBucket: h.frequencyBucket,
+          callCountWeek: h.weekCount,
+          callCountMonth: h.monthCount,
+          callCountTotal: h.totalCount,
         })),
         skipDuplicates: true,
       }),

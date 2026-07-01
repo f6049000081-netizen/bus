@@ -5,12 +5,15 @@
  */
 import * as Contacts from 'expo-contacts';
 import { hashContactPhone, normalizePhone } from './hashing';
-import { buildFrequencyMap, assignBucket } from './frequency';
+import { buildFrequencyMap, FrequencyBucket } from './frequency';
 import { getExcludedContactIds } from './exclusions';
 
 export interface HashedContact {
   hash: string;
-  frequencyBucket: 'frequent' | 'occasional' | 'rare' | 'unknown';
+  frequencyBucket: FrequencyBucket;
+  weekCount: number;
+  monthCount: number;
+  totalCount: number;
   localName?: string;
   contactId?: string;
 }
@@ -45,9 +48,14 @@ export async function hashAllContacts(
       const hash = await hashContactPhone(phone.number, defaultCountry);
       if (!hash || seen.has(hash)) continue;
       seen.add(hash);
+      const freq = freqMap.get(normalized);
+      const bucket: FrequencyBucket = freq?.bucket ?? (freqMap.size > 0 ? 'rare' : 'unknown');
       results.push({
         hash,
-        frequencyBucket: assignBucket(normalized, freqMap),
+        frequencyBucket: bucket,
+        weekCount: freq?.weekCount ?? 0,
+        monthCount: freq?.monthCount ?? 0,
+        totalCount: freq?.totalCount ?? 0,
         localName: contact.name,
         contactId: contact.id,
       });

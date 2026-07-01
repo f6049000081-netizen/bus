@@ -29,14 +29,15 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
     if (session.usedAt) { res.status(409).json({ message: 'Session already used' }); return; }
     if (session.initiatorId === req.userId) { res.status(400).json({ message: 'Cannot compare with yourself' }); return; }
 
+    const SELECT_FIELDS = { contactHash: true, frequencyBucket: true, callCountWeek: true, callCountMonth: true, callCountTotal: true } as const;
     const [hashesA, hashesB] = await Promise.all([
-      prisma.contactHash.findMany({ where: { userId: session.initiatorId, excluded: false }, select: { contactHash: true, frequencyBucket: true } }),
-      prisma.contactHash.findMany({ where: { userId: req.userId, excluded: false }, select: { contactHash: true, frequencyBucket: true } }),
+      prisma.contactHash.findMany({ where: { userId: session.initiatorId, excluded: false }, select: SELECT_FIELDS }),
+      prisma.contactHash.findMany({ where: { userId: req.userId, excluded: false }, select: SELECT_FIELDS }),
     ]);
 
     const mutual = intersect(hashesA.map((h) => h.contactHash), hashesB.map((h) => h.contactHash));
-    const bucketMapA = Object.fromEntries(hashesA.map((h) => [h.contactHash, h.frequencyBucket]));
-    const bucketMapB = Object.fromEntries(hashesB.map((h) => [h.contactHash, h.frequencyBucket]));
+    const mapA = Object.fromEntries(hashesA.map((h) => [h.contactHash, h]));
+    const mapB = Object.fromEntries(hashesB.map((h) => [h.contactHash, h]));
 
     const [comparison] = await prisma.$transaction([
       prisma.comparison.create({
@@ -66,8 +67,14 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
       mutualCount: mutual.length,
       mutuals: mutual.map((hash) => ({
         contactHash: hash,
-        yourFrequency: bucketMapB[hash] ?? 'unknown',
-        theirFrequency: bucketMapA[hash] ?? 'unknown',
+        yourFrequency: mapB[hash]?.frequencyBucket ?? 'unknown',
+        theirFrequency: mapA[hash]?.frequencyBucket ?? 'unknown',
+        yourWeekCount: mapB[hash]?.callCountWeek ?? 0,
+        theirWeekCount: mapA[hash]?.callCountWeek ?? 0,
+        yourMonthCount: mapB[hash]?.callCountMonth ?? 0,
+        theirMonthCount: mapA[hash]?.callCountMonth ?? 0,
+        yourTotalCount: mapB[hash]?.callCountTotal ?? 0,
+        theirTotalCount: mapA[hash]?.callCountTotal ?? 0,
       })),
       createdAt: comparison.createdAt,
     });
@@ -100,25 +107,33 @@ comparisonRouter.get('/:id', async (req, res, next) => {
       res.status(403).json({ message: 'Forbidden' }); return;
     }
     const isA = comparison.userAId === req.userId;
+    const SELECT_FIELDS = { contactHash: true, frequencyBucket: true, callCountWeek: true, callCountMonth: true, callCountTotal: true } as const;
+    const otherId = isA ? comparison.userBId : comparison.userAId;
     const [myHashes, otherHashes] = await Promise.all([
       prisma.contactHash.findMany({
         where: { userId: req.userId, contactHash: { in: comparison.mutualContactHashes }, excluded: false },
-        select: { contactHash: true, frequencyBucket: true },
+        select: SELECT_FIELDS,
       }),
       prisma.contactHash.findMany({
-        where: { userId: isA ? comparison.userBId : comparison.userAId, contactHash: { in: comparison.mutualContactHashes }, excluded: false },
-        select: { contactHash: true, frequencyBucket: true },
+        where: { userId: otherId, contactHash: { in: comparison.mutualContactHashes }, excluded: false },
+        select: SELECT_FIELDS,
       }),
     ]);
-    const myMap = Object.fromEntries(myHashes.map((h) => [h.contactHash, h.frequencyBucket]));
-    const otherMap = Object.fromEntries(otherHashes.map((h) => [h.contactHash, h.frequencyBucket]));
+    const myMap = Object.fromEntries(myHashes.map((h) => [h.contactHash, h]));
+    const otherMap = Object.fromEntries(otherHashes.map((h) => [h.contactHash, h]));
     res.json({
       id: comparison.id,
       mutualCount: comparison.mutualCount,
       mutuals: comparison.mutualContactHashes.map((hash) => ({
         contactHash: hash,
-        yourFrequency: myMap[hash] ?? 'unknown',
-        theirFrequency: otherMap[hash] ?? 'unknown',
+        yourFrequency: myMap[hash]?.frequencyBucket ?? 'unknown',
+        theirFrequency: otherMap[hash]?.frequencyBucket ?? 'unknown',
+        yourWeekCount: myMap[hash]?.callCountWeek ?? 0,
+        theirWeekCount: otherMap[hash]?.callCountWeek ?? 0,
+        yourMonthCount: myMap[hash]?.callCountMonth ?? 0,
+        theirMonthCount: otherMap[hash]?.callCountMonth ?? 0,
+        yourTotalCount: myMap[hash]?.callCountTotal ?? 0,
+        theirTotalCount: otherMap[hash]?.callCountTotal ?? 0,
       })),
       createdAt: comparison.createdAt,
     });

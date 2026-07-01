@@ -38,6 +38,9 @@ model ContactHash {
   userId          String
   contactHash     String
   frequencyBucket String   @default("unknown")
+  callCountWeek   Int      @default(0)
+  callCountMonth  Int      @default(0)
+  callCountTotal  Int      @default(0)
   excluded        Boolean  @default(false)
   lastSyncedAt    DateTime @default(now())
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)

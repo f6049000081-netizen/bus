@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import {
+  View, Text, StyleSheet, SectionList, ActivityIndicator,
+  TouchableOpacity, SectionListData,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getApiClient } from '@bus/shared';
 import { hashAllContacts, HashedContact, requestContactsPermission } from '../../src/services/contacts';
@@ -8,6 +11,25 @@ interface MutualItem {
   contactHash: string;
   yourFrequency: string;
   theirFrequency: string;
+  yourWeekCount: number;
+  theirWeekCount: number;
+  yourMonthCount: number;
+  theirMonthCount: number;
+  yourTotalCount: number;
+  theirTotalCount: number;
+}
+
+interface EnrichedMutual extends MutualItem {
+  name: string;
+  combinedScore: number;
+  bothActive: boolean;
+}
+
+interface Section {
+  key: string;
+  title: string;
+  subtitle: string;
+  data: EnrichedMutual[];
 }
 
 interface ComparisonResult {
@@ -21,71 +43,200 @@ const Colors = {
   background: '#0F172A', surface: '#1E293B', border: '#334155',
   primary: '#6366F1', success: '#10B981', warning: '#F59E0B',
   danger: '#EF4444', textPrimary: '#F1F5F9', textSecondary: '#94A3B8',
+  accent: '#8B5CF6',
 };
 
-const FREQ_COLORS: Record<string, string> = {
-  frequent: Colors.success,
-  occasional: Colors.warning,
-  rare: Colors.textSecondary,
-  unknown: Colors.border,
-};
+function buildSections(mutuals: EnrichedMutual[]): Section[] {
+  const sorted = [...mutuals].sort((a, b) => b.combinedScore - a.combinedScore);
 
-function FreqBadge({ label }: { label: string }) {
-  const color = FREQ_COLORS[label] ?? FREQ_COLORS.unknown;
+  // Section 1: Top 10 by combined call volume (only if any calls exist)
+  const hasCallData = sorted.some(m => m.combinedScore > 0);
+  const top10 = hasCallData ? sorted.filter(m => m.combinedScore > 0).slice(0, 10) : [];
+  const top10Set = new Set(top10.map(m => m.contactHash));
+
+  // Section 2: Active this week (either user has week calls), not in top 10
+  const thisWeek = sorted.filter(
+    m => !top10Set.has(m.contactHash) && (m.yourWeekCount + m.theirWeekCount) > 0
+  );
+  const weekSet = new Set(thisWeek.map(m => m.contactHash));
+
+  // Section 3: Active this month, not in above
+  const thisMonth = sorted.filter(
+    m => !top10Set.has(m.contactHash) && !weekSet.has(m.contactHash) &&
+      (m.yourMonthCount + m.theirMonthCount) > 0
+  );
+  const monthSet = new Set(thisMonth.map(m => m.contactHash));
+
+  // Section 4: Called by both (mutual callers), not in above
+  const calledByBoth = sorted.filter(
+    m => !top10Set.has(m.contactHash) && !weekSet.has(m.contactHash) &&
+      !monthSet.has(m.contactHash) && m.bothActive
+  );
+  const bothSet = new Set(calledByBoth.map(m => m.contactHash));
+
+  // Section 5: Everyone else
+  const others = sorted.filter(
+    m => !top10Set.has(m.contactHash) && !weekSet.has(m.contactHash) &&
+      !monthSet.has(m.contactHash) && !bothSet.has(m.contactHash)
+  );
+
+  const sections: Section[] = [];
+
+  if (top10.length > 0) {
+    sections.push({
+      key: 'top10',
+      title: 'Top 10 Together',
+      subtitle: 'Your highest combined call volume mutual contacts',
+      data: top10,
+    });
+  }
+  if (thisWeek.length > 0) {
+    sections.push({
+      key: 'week',
+      title: 'Active This Week',
+      subtitle: 'Called in the last 7 days by either of you',
+      data: thisWeek,
+    });
+  }
+  if (thisMonth.length > 0) {
+    sections.push({
+      key: 'month',
+      title: 'Active This Month',
+      subtitle: 'Called in the last 30 days by either of you',
+      data: thisMonth,
+    });
+  }
+  if (calledByBoth.length > 0) {
+    sections.push({
+      key: 'both',
+      title: 'Called by Both of You',
+      subtitle: 'Contacts you both actively call',
+      data: calledByBoth,
+    });
+  }
+  if (others.length > 0) {
+    sections.push({
+      key: 'others',
+      title: 'Other Mutual Contacts',
+      subtitle: 'In both your address books',
+      data: others,
+    });
+  }
+
+  return sections;
+}
+
+function callLabel(item: EnrichedMutual): string {
+  const total = item.yourTotalCount + item.theirTotalCount;
+  const week = item.yourWeekCount + item.theirWeekCount;
+  const month = item.yourMonthCount + item.theirMonthCount;
+  if (week > 0) return `${week} call${week !== 1 ? 's' : ''} this week`;
+  if (month > 0) return `${month} call${month !== 1 ? 's' : ''} this month`;
+  if (total > 0) return `${total} combined call${total !== 1 ? 's' : ''}`;
+  return item.yourFrequency !== 'unknown' ? item.yourFrequency : 'in both address books';
+}
+
+function ContactCard({ item }: { item: EnrichedMutual }) {
+  const initial = item.name.charAt(0).toUpperCase() || '?';
+  const label = callLabel(item);
   return (
-    <View style={[styles.badge, { backgroundColor: color + '30', borderColor: color }]}>
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
+    <View style={styles.card}>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initial}</Text>
+        {item.bothActive && <View style={styles.bothDot} />}
+      </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.callLabel}>{label}</Text>
+      </View>
+      {(item.yourWeekCount > 0 || item.theirWeekCount > 0) && (
+        <View style={styles.weekBadge}>
+          <Text style={styles.weekBadgeText}>this week</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function SectionHeader({ section }: { section: SectionListData<EnrichedMutual, Section> }) {
+  const icons: Record<string, string> = {
+    top10: '⭐',
+    week: '📅',
+    month: '📆',
+    both: '🤝',
+    others: '👥',
+  };
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleRow}>
+        <Text style={styles.sectionIcon}>{icons[section.key] ?? '📋'}</Text>
+        <Text style={styles.sectionTitle}>{section.title}</Text>
+        <View style={styles.sectionCount}>
+          <Text style={styles.sectionCountText}>{section.data.length}</Text>
+        </View>
+      </View>
+      <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
     </View>
   );
 }
 
 export default function ResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [result, setResult] = useState<ComparisonResult | null>(null);
-  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const [sections, setSections] = useState<Section[]>([]);
+  const [mutualCount, setMutualCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const resolveNames = useCallback(async (mutuals: MutualItem[]) => {
-    if (mutuals.length === 0) return;
+  const resolveAndBuild = useCallback(async (mutuals: MutualItem[]) => {
+    let nameMap: Record<string, string> = {};
     const granted = await requestContactsPermission();
-    if (!granted) return;
-    const hashed: HashedContact[] = await hashAllContacts('');
-    const mutualSet = new Set(mutuals.map((m) => m.contactHash));
-    const map: Record<string, string> = {};
-    for (const h of hashed) {
-      if (h.localName && mutualSet.has(h.hash)) {
-        map[h.hash] = h.localName;
+    if (granted && mutuals.length > 0) {
+      const hashed: HashedContact[] = await hashAllContacts('');
+      const mutualSet = new Set(mutuals.map(m => m.contactHash));
+      for (const h of hashed) {
+        if (h.localName && mutualSet.has(h.hash)) nameMap[h.hash] = h.localName;
       }
     }
-    setNameMap(map);
+
+    const enriched: EnrichedMutual[] = mutuals.map(m => ({
+      ...m,
+      name: nameMap[m.contactHash] ?? 'Unknown Contact',
+      combinedScore: m.yourTotalCount + m.theirTotalCount,
+      bothActive: m.yourTotalCount > 0 && m.theirTotalCount > 0,
+    }));
+
+    setSections(buildSections(enriched));
   }, []);
 
   useEffect(() => {
     if (!id) return;
     getApiClient().get<ComparisonResult>(`/api/comparison/${id}`)
       .then(({ data }) => {
-        setResult(data);
-        return resolveNames(data.mutuals);
+        setMutualCount(data.mutualCount);
+        return resolveAndBuild(data.mutuals);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [id, resolveNames]);
+  }, [id, resolveAndBuild]);
 
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={Colors.primary} size="large" />
-        <Text style={styles.loadingText}>Loading results…</Text>
+        <Text style={styles.loadingText}>Comparing contacts…</Text>
       </View>
     );
   }
 
-  if (!result) {
+  if (mutualCount === 0) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Could not load results.</Text>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
+        <Text style={styles.emptyEmoji}>🤷</Text>
+        <Text style={styles.emptyTitle}>No mutual contacts</Text>
+        <Text style={styles.emptyBody}>
+          You don't share any contacts yet, or their contacts aren't synced.
+        </Text>
+        <TouchableOpacity onPress={() => router.replace('/(app)' as never)} style={styles.backBtn}>
+          <Text style={styles.backText}>← Home</Text>
         </TouchableOpacity>
       </View>
     );
@@ -93,78 +244,76 @@ export default function ResultScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace('/(app)' as never)} style={styles.backBtn}>
-          <Text style={styles.backText}>← Home</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>
-          {result.mutualCount === 0
-            ? 'No mutual contacts'
-            : `${result.mutualCount} mutual contact${result.mutualCount === 1 ? '' : 's'}`}
-        </Text>
-        <Text style={styles.subtitle}>
-          {result.mutualCount === 0
-            ? "You don't share any contacts yet."
-            : 'These are contacts you both have. Names come from your own address book.'}
-        </Text>
-      </View>
-
-      {result.mutualCount === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyEmoji}>🤷</Text>
-          <Text style={styles.emptyText}>
-            Neither of you has the other's contacts, or their contacts aren't synced yet.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={result.mutuals}
-          keyExtractor={(item) => item.contactHash}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={styles.cardLeft}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {(nameMap[item.contactHash] ?? '?').charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <Text style={styles.name} numberOfLines={1}>
-                  {nameMap[item.contactHash] ?? 'Unknown Contact'}
-                </Text>
-              </View>
-              <View style={styles.cardRight}>
-                <FreqBadge label={item.yourFrequency} />
-                <FreqBadge label={item.theirFrequency} />
-              </View>
-            </View>
-          )}
-        />
-      )}
+      <SectionList
+        sections={sections}
+        keyExtractor={item => item.contactHash}
+        renderItem={({ item }) => <ContactCard item={item} />}
+        renderSectionHeader={({ section }) => <SectionHeader section={section} />}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.replace('/(app)' as never)} style={styles.backBtnRow}>
+              <Text style={styles.backText}>← Home</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>
+              {mutualCount} mutual contact{mutualCount !== 1 ? 's' : ''}
+            </Text>
+            <Text style={styles.subtitle}>
+              Organized by how often you both call them
+            </Text>
+          </View>
+        }
+        contentContainerStyle={styles.listContent}
+        stickySectionHeadersEnabled={false}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  center: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  center: { flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 },
   loadingText: { fontSize: 15, color: Colors.textSecondary, marginTop: 16 },
-  errorText: { fontSize: 15, color: Colors.danger },
-  header: { padding: 24, paddingTop: 56 },
-  backBtn: { marginBottom: 16 },
+  header: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 8 },
+  backBtnRow: { marginBottom: 16 },
   backText: { fontSize: 15, color: Colors.primary },
-  title: { fontSize: 24, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
-  subtitle: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
-  list: { padding: 24, gap: 12 },
-  card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: Colors.border },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary + '30', justifyContent: 'center', alignItems: 'center' },
-  avatarText: { fontSize: 16, fontWeight: '700', color: Colors.primary },
-  name: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, flex: 1 },
-  cardRight: { flexDirection: 'row', gap: 6 },
-  badge: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { fontSize: 11, fontWeight: '600' },
-  emptyCard: { margin: 24, backgroundColor: Colors.surface, borderRadius: 16, padding: 32, alignItems: 'center', gap: 12, borderWidth: 1, borderColor: Colors.border },
-  emptyEmoji: { fontSize: 40 },
-  emptyText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21 },
+  title: { fontSize: 26, fontWeight: '700', color: Colors.textPrimary, marginBottom: 6 },
+  subtitle: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
+  listContent: { paddingBottom: 32 },
+  sectionHeader: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 8 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+  sectionIcon: { fontSize: 16 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, flex: 1 },
+  sectionCount: { backgroundColor: Colors.border, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 1 },
+  sectionCountText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
+  sectionSubtitle: { fontSize: 12, color: Colors.textSecondary + 'aa', lineHeight: 16 },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, marginHorizontal: 20, marginBottom: 8,
+    borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border,
+  },
+  avatar: { position: 'relative', width: 44, height: 44 },
+  avatarText: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: Colors.primary + '25',
+    textAlign: 'center', lineHeight: 44,
+    fontSize: 18, fontWeight: '700', color: Colors.primary,
+  },
+  bothDot: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: Colors.success, borderWidth: 2, borderColor: Colors.surface,
+  },
+  cardBody: { flex: 1 },
+  name: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 2 },
+  callLabel: { fontSize: 12, color: Colors.textSecondary },
+  weekBadge: {
+    backgroundColor: Colors.success + '20',
+    borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3,
+    borderWidth: 1, borderColor: Colors.success + '60',
+  },
+  weekBadgeText: { fontSize: 10, fontWeight: '600', color: Colors.success },
+  emptyEmoji: { fontSize: 48, marginBottom: 16 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
+  emptyBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 28 },
+  backBtn: { paddingVertical: 12, paddingHorizontal: 24, backgroundColor: Colors.primary + '20', borderRadius: 12 },
 });

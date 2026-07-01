@@ -1,12 +1,19 @@
 /**
- * Converts call-log data into frequency buckets.
- * Raw call logs never leave this module — only bucket labels are used.
+ * Converts call-log data into frequency buckets and per-period counts.
+ * Raw call logs never leave this module — only aggregate counts are used.
  */
 import { Platform } from 'react-native';
 import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js';
-import { getCallFrequencies, CallFrequency } from '../../modules/call-log/index';
+import { getCallFrequencies } from '../../modules/call-log/index';
 
 export type FrequencyBucket = 'frequent' | 'occasional' | 'rare' | 'unknown';
+
+export interface ContactFrequency {
+  bucket: FrequencyBucket;
+  weekCount: number;
+  monthCount: number;
+  totalCount: number;
+}
 
 function normalizeForLookup(raw: string, country = 'ET'): string | null {
   try {
@@ -17,48 +24,34 @@ function normalizeForLookup(raw: string, country = 'ET'): string | null {
   }
 }
 
-/**
- * Build a map from normalized E.164 phone → FrequencyBucket.
- * Returns empty map on iOS or when permission is denied.
- */
-export async function buildFrequencyMap(defaultCountry = 'ET'): Promise<Map<string, FrequencyBucket>> {
-  const map = new Map<string, FrequencyBucket>();
+export async function buildFrequencyMap(defaultCountry = 'ET'): Promise<Map<string, ContactFrequency>> {
+  const map = new Map<string, ContactFrequency>();
   if (Platform.OS !== 'android') return map;
 
-  let frequencies: CallFrequency[];
+  let frequencies: Awaited<ReturnType<typeof getCallFrequencies>>;
   try {
     frequencies = await getCallFrequencies();
   } catch {
     return map;
   }
 
-  const totalCounts = new Map<string, number>();
+  const totals = new Map<string, { week: number; month: number; total: number }>();
 
-  for (const { number, count } of frequencies) {
+  for (const { number, weekCount, monthCount, totalCount } of frequencies) {
     const normalized = normalizeForLookup(number, defaultCountry);
     if (!normalized) continue;
-    // getCallFrequencies already filters to last 90 days; counts are per normalized number
-    totalCounts.set(normalized, (totalCounts.get(normalized) ?? 0) + count);
+    const existing = totals.get(normalized) ?? { week: 0, month: 0, total: 0 };
+    totals.set(normalized, {
+      week: existing.week + weekCount,
+      month: existing.month + monthCount,
+      total: existing.total + totalCount,
+    });
   }
 
-  for (const [number, count] of totalCounts) {
-    if (count >= 5) {
-      map.set(number, 'frequent');
-    } else if (count >= 1) {
-      map.set(number, 'occasional');
-    }
+  for (const [number, { week, month, total }] of totals) {
+    const bucket: FrequencyBucket = total >= 5 ? 'frequent' : total >= 1 ? 'occasional' : 'rare';
+    map.set(number, { bucket, weekCount: week, monthCount: month, totalCount: total });
   }
 
   return map;
-}
-
-/**
- * If freqMap is non-empty (call log was accessible), contacts with no calls are 'rare'.
- * If freqMap is empty (no access — iOS or permission denied), fall back to 'unknown'.
- */
-export function assignBucket(
-  normalizedPhone: string,
-  freqMap: Map<string, FrequencyBucket>
-): FrequencyBucket {
-  return freqMap.get(normalizedPhone) ?? (freqMap.size > 0 ? 'rare' : 'unknown');
 }

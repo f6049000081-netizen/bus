@@ -8,7 +8,7 @@ import { requestContactsPermission, hashAllContacts } from '../../src/services/c
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
 
 const CONTACT_HASH_VERSION_KEY = 'contact_hash_version';
-const CURRENT_VERSION = 'v1';
+const CURRENT_VERSION = 'v2';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
@@ -25,7 +25,13 @@ export default function HomeScreen() {
     try {
       const hashes = await hashAllContacts('');
       await getApiClient().post('/api/contacts/sync', {
-        hashes: hashes.map((h) => ({ hash: h.hash, frequencyBucket: h.frequencyBucket })),
+        hashes: hashes.map((h) => ({
+          hash: h.hash,
+          frequencyBucket: h.frequencyBucket,
+          weekCount: h.weekCount,
+          monthCount: h.monthCount,
+          totalCount: h.totalCount,
+        })),
       });
       await SecureStore.setItemAsync(CONTACT_HASH_VERSION_KEY, CURRENT_VERSION);
       setSynced(true);

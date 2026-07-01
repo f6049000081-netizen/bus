@@ -10,7 +10,9 @@ import { generateSalt, hashPhone } from '../services/psi';
 
 const authRouter = Router();
 
-const otpLimiter = rateLimit({ windowMs: 60_000, max: 3, message: { message: 'Too many OTP requests' } });
+const otpLimiter = process.env.DEV_OTP_BYPASS === 'true'
+  ? rateLimit({ windowMs: 60_000, max: 1000 })
+  : rateLimit({ windowMs: 60_000, max: 3, message: { message: 'Too many OTP requests' } });
 
 const phoneSchema = z.object({
   phone: z.string().regex(/^\+[1-9]\d{7,14}$/, 'Must be E.164 format'),
