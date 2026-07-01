@@ -25,7 +25,9 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     return;
   }
   console.error(err);
-  res.status(500).json({ message: 'Internal server error' });
+  const message = err instanceof Error ? err.message : 'Internal server error';
+  const status = (err as { status?: number; statusCode?: number }).status ?? (err as { status?: number; statusCode?: number }).statusCode ?? 500;
+  res.status(status >= 400 && status < 600 ? status : 500).json({ message });
 });
 
 const PORT = process.env.PORT ?? 3000;
