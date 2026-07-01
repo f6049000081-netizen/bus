@@ -2,12 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
+import { LogoMark } from '../../src/components/LogoMark';
 
 export default function WelcomeScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
-        <Text style={styles.logo}>Between Us</Text>
+        <LogoMark variant="hero" />
         <Text style={styles.tagline}>Discover who you both already know.</Text>
       </View>
 
@@ -35,8 +36,7 @@ export default function WelcomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: Colors.background, padding: Spacing.xxl, justifyContent: 'center' },
-  hero: { alignItems: 'center', marginBottom: Spacing.xxxl },
-  logo: { fontSize: FontSize.display, fontFamily: Fonts.bold, color: Colors.primary, marginBottom: Spacing.sm },
+  hero: { alignItems: 'center', marginBottom: Spacing.xxxl, gap: Spacing.md },
   tagline: { fontSize: FontSize.subheading, fontFamily: Fonts.regular, color: Colors.textSecondary, textAlign: 'center' },
   privacyCard: { backgroundColor: Colors.surface, borderRadius: Radii.card, padding: Spacing.xl, marginBottom: Spacing.xxxl, borderWidth: 1, borderColor: Colors.border },
   privacyTitle: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.primaryLight, marginBottom: Spacing.md },

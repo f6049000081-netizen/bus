@@ -5,6 +5,7 @@ import Toast from 'react-native-toast-message';
 import { getApiClient, AuthResponse } from '@bus/shared';
 import { useAuthStore } from '../../src/stores/authStore';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
+import { LogoMark } from '../../src/components/LogoMark';
 
 export default function VerifyScreen() {
   const { phone } = useLocalSearchParams<{ phone: string }>();
@@ -29,6 +30,7 @@ export default function VerifyScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.logoRow}><LogoMark variant="inline" /></View>
       <Text style={styles.title}>Enter the code</Text>
       <Text style={styles.subtitle}>Sent to {phone}</Text>
       <TextInput
@@ -54,6 +56,7 @@ export default function VerifyScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, padding: Spacing.xxl, justifyContent: 'center' },
+  logoRow: { marginBottom: Spacing.xxxl },
   title: { fontSize: FontSize.heading, fontFamily: Fonts.bold, color: Colors.textPrimary, marginBottom: Spacing.sm },
   subtitle: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.xxxl },
   input: { backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.primary, borderRadius: Radii.md, padding: Spacing.lg, fontSize: 32, color: Colors.textPrimary, marginBottom: Spacing.xl, letterSpacing: 16 },

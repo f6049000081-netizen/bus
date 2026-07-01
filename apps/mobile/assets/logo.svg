@@ -1,0 +1,21 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 80'>
+  <defs>
+    <linearGradient id='g1' x1='0%' y1='0%' x2='100%' y2='100%'>
+      <stop offset='0%' stop-color='#6366F1'/>
+      <stop offset='100%' stop-color='#8B5CF6'/>
+    </linearGradient>
+    <mask id='m1'>
+      <rect width='320' height='80' fill='white'/>
+    </mask>
+  </defs>
+  <!-- Background -->
+  <rect width='320' height='80' fill='#0F172A' rx='12'/>
+  <!-- Icon: two overlapping circles -->
+  <circle cx='30' cy='40' r='18' fill='url(#g1)' opacity='0.9'/>
+  <circle cx='50' cy='40' r='18' fill='url(#g1)' opacity='0.9'/>
+  <!-- Intersection highlight -->
+  <path d='M40,24 A18,18 0 0,1 40,56 A18,18 0 0,1 40,24' fill='white' opacity='0.3'/>
+  <!-- Wordmark -->
+  <text x='82' y='50' font-family='system-ui, -apple-system, sans-serif' font-size='32' font-weight='800' fill='white' letter-spacing='-1'>BUS</text>
+  <text x='82' y='65' font-family='system-ui, -apple-system, sans-serif' font-size='10' font-weight='400' fill='#94A3B8' letter-spacing='3.5'>BETWEEN US</text>
+</svg>
