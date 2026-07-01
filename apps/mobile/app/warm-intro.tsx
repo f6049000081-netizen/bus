@@ -5,7 +5,6 @@ import Toast from 'react-native-toast-message';
 import { useQuery } from '@tanstack/react-query';
 import { getApiClient } from '@bus/shared';
 import { hashAllContacts, requestContactsPermission } from '../src/services/contacts';
-import { useAuthStore } from '../src/stores/authStore';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../src/constants/theme';
 
 interface MutualItem { contactHash: string; yourFrequency: string; theirFrequency: string }
@@ -14,7 +13,6 @@ interface ComparisonListItem { id: string; mutualCount: number; createdAt: strin
 
 export default function WarmIntroScreen() {
   const { anchorId } = useLocalSearchParams<{ anchorId: string }>();
-  const { salt } = useAuthStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bridgeContacts, setBridgeContacts] = useState<Array<{ hash: string; name: string }> | null>(null);
   const [computing, setComputing] = useState(false);
@@ -30,7 +28,7 @@ export default function WarmIntroScreen() {
   const otherComparisons = history?.filter(c => c.id !== anchorId) ?? [];
 
   const findBridges = useCallback(async () => {
-    if (!selectedId || !anchorId || !salt) return;
+    if (!selectedId || !anchorId) return;
     setComputing(true);
     setBridgeContacts(null);
     try {
@@ -53,7 +51,7 @@ export default function WarmIntroScreen() {
         return;
       }
 
-      const hashed = await hashAllContacts(salt);
+      const hashed = await hashAllContacts('');
       const hashToName = new Map(hashed.map(h => [h.hash, h.localName ?? 'Unknown Contact']));
       setBridgeContacts(bridges.map(br => ({ hash: br.contactHash, name: hashToName.get(br.contactHash) ?? 'Unknown Contact' })));
     } catch {
@@ -61,7 +59,7 @@ export default function WarmIntroScreen() {
     } finally {
       setComputing(false);
     }
-  }, [anchorId, selectedId, salt]);
+  }, [anchorId, selectedId]);
 
   return (
     <View style={styles.container}>

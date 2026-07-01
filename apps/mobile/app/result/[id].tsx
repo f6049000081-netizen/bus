@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getApiClient } from '@bus/shared';
-import { useAuthStore } from '../../src/stores/authStore';
 import { hashAllContacts, HashedContact, requestContactsPermission } from '../../src/services/contacts';
 
 interface MutualItem {
@@ -42,16 +41,15 @@ function FreqBadge({ label }: { label: string }) {
 
 export default function ResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { salt } = useAuthStore();
   const [result, setResult] = useState<ComparisonResult | null>(null);
   const [nameMap, setNameMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const resolveNames = useCallback(async (mutuals: MutualItem[]) => {
-    if (!salt || mutuals.length === 0) return;
+    if (mutuals.length === 0) return;
     const granted = await requestContactsPermission();
     if (!granted) return;
-    const hashed: HashedContact[] = await hashAllContacts(salt);
+    const hashed: HashedContact[] = await hashAllContacts('');
     const mutualSet = new Set(mutuals.map((m) => m.contactHash));
     const map: Record<string, string> = {};
     for (const h of hashed) {
@@ -60,7 +58,7 @@ export default function ResultScreen() {
       }
     }
     setNameMap(map);
-  }, [salt]);
+  }, []);
 
   useEffect(() => {
     if (!id) return;

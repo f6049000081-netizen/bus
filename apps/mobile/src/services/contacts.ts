@@ -4,7 +4,7 @@
  * Raw numbers and contact names never leave this module.
  */
 import * as Contacts from 'expo-contacts';
-import { hashPhoneWithSalt, normalizePhone } from './hashing';
+import { hashContactPhone, normalizePhone } from './hashing';
 import { buildFrequencyMap, assignBucket } from './frequency';
 import { getExcludedContactIds } from './exclusions';
 
@@ -21,7 +21,7 @@ export async function requestContactsPermission(): Promise<boolean> {
 }
 
 export async function hashAllContacts(
-  salt: string,
+  _salt: string,
   defaultCountry = 'ET'
 ): Promise<HashedContact[]> {
   const [{ data }, freqMap, excludedIds] = await Promise.all([
@@ -42,7 +42,7 @@ export async function hashAllContacts(
       if (!phone.number) continue;
       const normalized = normalizePhone(phone.number, defaultCountry);
       if (!normalized) continue;
-      const hash = await hashPhoneWithSalt(salt, phone.number, defaultCountry);
+      const hash = await hashContactPhone(phone.number, defaultCountry);
       if (!hash || seen.has(hash)) continue;
       seen.add(hash);
       results.push({

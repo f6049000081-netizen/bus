@@ -1,42 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
 import { getApiClient } from '@bus/shared';
 import { useAuthStore } from '../../src/stores/authStore';
 import { requestContactsPermission, hashAllContacts } from '../../src/services/contacts';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
 
+const CONTACT_HASH_VERSION_KEY = 'contact_hash_version';
+const CURRENT_VERSION = 'v1';
+
 export default function HomeScreen() {
-  const { user, salt } = useAuthStore();
+  const { user } = useAuthStore();
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
 
-  const handleSync = async () => {
-    if (!salt) { Toast.show({ type: 'error', text1: 'Not signed in' }); return; }
+  const doSync = async (silent = false) => {
     const granted = await requestContactsPermission();
     if (!granted) {
-      Toast.show({ type: 'error', text1: 'Permission denied', text2: 'Between Us needs contact access to find mutual connections.' });
+      if (!silent) Toast.show({ type: 'error', text1: 'Permission denied', text2: 'Between Us needs contact access to find mutual connections.' });
       return;
     }
     setSyncing(true);
     try {
-      const hashes = await hashAllContacts(salt);
+      const hashes = await hashAllContacts('');
       await getApiClient().post('/api/contacts/sync', {
         hashes: hashes.map((h) => ({ hash: h.hash, frequencyBucket: h.frequencyBucket })),
       });
+      await SecureStore.setItemAsync(CONTACT_HASH_VERSION_KEY, CURRENT_VERSION);
       setSynced(true);
-      const withFrequency = hashes.filter(h => h.frequencyBucket !== 'unknown').length;
-      const freqNote = withFrequency > 0
-        ? `${hashes.length} contacts · ${withFrequency} with call frequency`
-        : `${hashes.length} contacts synced`;
-      Toast.show({ type: 'success', text1: 'Contacts synced', text2: freqNote });
+      if (!silent) {
+        const withFrequency = hashes.filter(h => h.frequencyBucket !== 'unknown').length;
+        const freqNote = withFrequency > 0
+          ? `${hashes.length} contacts · ${withFrequency} with call frequency`
+          : `${hashes.length} contacts synced`;
+        Toast.show({ type: 'success', text1: 'Contacts synced', text2: freqNote });
+      }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed';
-      Toast.show({ type: 'error', text1: 'Sync failed', text2: msg });
+      if (!silent) {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed';
+        Toast.show({ type: 'error', text1: 'Sync failed', text2: msg });
+      }
     } finally {
       setSyncing(false);
     }
   };
+
+  useEffect(() => {
+    SecureStore.getItemAsync(CONTACT_HASH_VERSION_KEY).then((stored) => {
+      if (stored !== CURRENT_VERSION) doSync(true);
+    });
+  }, []);
+
+  const handleSync = () => doSync(false);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
