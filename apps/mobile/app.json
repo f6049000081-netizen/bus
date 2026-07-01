@@ -14,12 +14,13 @@
     "android": {
       "adaptiveIcon": { "backgroundColor": "#0F172A" },
       "package": "com.bus.app",
-      "permissions": ["android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG"]
+      "permissions": ["android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA"]
     },
     "plugins": [
       "expo-router",
       "expo-font",
       "expo-notifications",
+      ["expo-camera", { "cameraPermission": "Allow Between Us to use the camera to scan QR codes for contact comparison." }],
       ["expo-contacts", { "contactsPermission": "Allow Between Us to access your contacts to find mutual connections. Raw contacts are never uploaded — only hashed identifiers." }]
     ],
     "experiments": { "typedRoutes": false }
