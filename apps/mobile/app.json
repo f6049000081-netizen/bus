@@ -9,14 +9,13 @@
     "scheme": "bus",
     "userInterfaceStyle": "dark",
     "splash": {
+      "image": "./assets/splash.png",
       "backgroundColor": "#0F172A"
     },
-    "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "com.bus.app"
-    },
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.bus.app" },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F172A"
       },
       "package": "com.bus.app",
@@ -32,29 +31,13 @@
       "expo-router",
       "expo-font",
       "expo-notifications",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow Between Us to use the camera to scan QR codes for contact comparison."
-        }
-      ],
-      [
-        "expo-contacts",
-        {
-          "contactsPermission": "Allow Between Us to access your contacts to find mutual connections. Raw contacts are never uploaded — only hashed identifiers."
-        }
-      ]
+      ["expo-camera", { "cameraPermission": "Allow Between Us to use the camera to scan QR codes for contact comparison." }],
+      ["expo-contacts", { "contactsPermission": "Allow Between Us to access your contacts to find mutual connections. Raw contacts are never uploaded — only hashed identifiers." }]
     ],
-    "experiments": {
-      "typedRoutes": false
-    },
+    "experiments": { "typedRoutes": false },
     "extra": {
-      "router": {
-        "origin": false
-      },
-      "eas": {
-        "projectId": "38660dce-3fa5-4a5d-a438-4aa9060ee6b3"
-      }
+      "router": { "origin": false },
+      "eas": { "projectId": "38660dce-3fa5-4a5d-a438-4aa9060ee6b3" }
     }
   }
 }
