@@ -65,6 +65,57 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+comparisonRouter.get('/session/:id', async (req, res, next) => {
+  try {
+    const session = await prisma.comparisonSession.findUnique({
+      where: { id: req.params.id },
+      include: { comparison: { select: { id: true } } },
+    });
+    if (!session) { res.status(404).json({ message: 'Not found' }); return; }
+    if (session.initiatorId !== req.userId) { res.status(403).json({ message: 'Forbidden' }); return; }
+    res.json({
+      id: session.id,
+      token: session.token,
+      expiresAt: session.expiresAt,
+      used: !!session.usedAt,
+      comparisonId: session.comparison?.id ?? null,
+    });
+  } catch (err) { next(err); }
+});
+
+comparisonRouter.get('/:id', async (req, res, next) => {
+  try {
+    const comparison = await prisma.comparison.findUnique({ where: { id: req.params.id } });
+    if (!comparison) { res.status(404).json({ message: 'Not found' }); return; }
+    if (comparison.userAId !== req.userId && comparison.userBId !== req.userId) {
+      res.status(403).json({ message: 'Forbidden' }); return;
+    }
+    const isA = comparison.userAId === req.userId;
+    const [myHashes, otherHashes] = await Promise.all([
+      prisma.contactHash.findMany({
+        where: { userId: req.userId, contactHash: { in: comparison.mutualContactHashes }, excluded: false },
+        select: { contactHash: true, frequencyBucket: true },
+      }),
+      prisma.contactHash.findMany({
+        where: { userId: isA ? comparison.userBId : comparison.userAId, contactHash: { in: comparison.mutualContactHashes }, excluded: false },
+        select: { contactHash: true, frequencyBucket: true },
+      }),
+    ]);
+    const myMap = Object.fromEntries(myHashes.map((h) => [h.contactHash, h.frequencyBucket]));
+    const otherMap = Object.fromEntries(otherHashes.map((h) => [h.contactHash, h.frequencyBucket]));
+    res.json({
+      id: comparison.id,
+      mutualCount: comparison.mutualCount,
+      mutuals: comparison.mutualContactHashes.map((hash) => ({
+        contactHash: hash,
+        yourFrequency: myMap[hash] ?? 'unknown',
+        theirFrequency: otherMap[hash] ?? 'unknown',
+      })),
+      createdAt: comparison.createdAt,
+    });
+  } catch (err) { next(err); }
+});
+
 comparisonRouter.get('/', async (req, res, next) => {
   try {
     const comparisons = await prisma.comparison.findMany({
