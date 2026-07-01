@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  phoneHash   String   @unique
+  phoneHint   String
+  displayName String   @default("")
+  salt        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  refreshTokens  RefreshToken[]
+  contactHashes  ContactHash[]
+  comparisonsAsA Comparison[]      @relation("UserA")
+  comparisonsAsB Comparison[]      @relation("UserB")
+  sessions       ComparisonSession[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ContactHash {
+  id              String   @id @default(uuid())
+  userId          String
+  contactHash     String
+  frequencyBucket String   @default("unknown")
+  excluded        Boolean  @default(false)
+  lastSyncedAt    DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactHash])
+  @@index([userId])
+}
+
+model ComparisonSession {
+  id          String    @id @default(uuid())
+  initiatorId String
+  token       String    @unique @default(uuid())
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+  initiator   User      @relation(fields: [initiatorId], references: [id], onDelete: Cascade)
+  comparison  Comparison?
+}
+
+model Comparison {
+  id                  String            @id @default(uuid())
+  sessionId           String            @unique
+  userAId             String
+  userBId             String
+  mutualCount         Int
+  mutualContactHashes String[]
+  createdAt           DateTime          @default(now())
+  session             ComparisonSession @relation(fields: [sessionId], references: [id])
+  userA               User              @relation("UserA", fields: [userAId], references: [id])
+  userB               User              @relation("UserB", fields: [userBId], references: [id])
+}

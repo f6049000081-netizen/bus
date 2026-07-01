@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Between Us",
+    "slug": "bus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "bus",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0F172A"
+    },
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.bus.app" },
+    "android": {
+      "adaptiveIcon": { "backgroundColor": "#0F172A" },
+      "package": "com.bus.app",
+      "permissions": ["android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      ["expo-contacts", { "contactsPermission": "Allow Between Us to access your contacts to find mutual connections. Raw contacts are never uploaded — only hashed identifiers." }]
+    ],
+    "experiments": { "typedRoutes": false }
+  }
+}
