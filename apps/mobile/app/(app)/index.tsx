@@ -6,6 +6,7 @@ import { getApiClient } from '@bus/shared';
 import { useAuthStore } from '../../src/stores/authStore';
 import { requestContactsPermission, hashAllContacts } from '../../src/services/contacts';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
+import { LogoMark } from '../../src/components/LogoMark';
 
 const CONTACT_HASH_VERSION_KEY = 'contact_hash_version';
 const CURRENT_VERSION = 'v2';
@@ -62,6 +63,7 @@ export default function HomeScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.logoRow}><LogoMark variant="hero" /></View>
       <Text style={styles.greeting}>Hi{user?.displayName ? `, ${user.displayName}` : ''}</Text>
       <Text style={styles.sub}>Sync your contacts once to start finding mutual connections.</Text>
       <View style={styles.card}>
@@ -81,7 +83,8 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: Colors.background, padding: Spacing.xxl },
-  greeting: { fontSize: FontSize.heading, fontFamily: Fonts.bold, color: Colors.textPrimary, marginTop: Spacing.xxxl, marginBottom: Spacing.sm },
+  logoRow: { alignItems: 'center', marginTop: Spacing.xxxl, marginBottom: Spacing.xl },
+  greeting: { fontSize: FontSize.heading, fontFamily: Fonts.bold, color: Colors.textPrimary, marginBottom: Spacing.sm },
   sub: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.xxxl },
   card: { backgroundColor: Colors.surface, borderRadius: Radii.card, padding: Spacing.xl, borderWidth: 1, borderColor: Colors.border },
   cardTitle: { fontSize: FontSize.subheading, fontFamily: Fonts.semiBold, color: Colors.textPrimary, marginBottom: Spacing.sm },
