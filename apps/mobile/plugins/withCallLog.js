@@ -53,8 +53,9 @@ function withCallLog(config) {
     return config;
   });
 
-  // Step 3: pin Kotlin to 1.9.25 so Compose Compiler 1.5.15 is satisfied
-  // (EAS can cache older node_modules that generate 1.9.24 by default)
+  // Step 3: pin Kotlin to 1.9.25 so Compose Compiler 1.5.15 is satisfied.
+  // Write to BOTH gradle.properties AND patch the root build.gradle directly
+  // so that even a cached EAS node_modules with '1.9.24' as default is overridden.
   config = withGradleProperties(config, (config) => {
     const props = config.modResults;
     const KEY = 'android.kotlinVersion';
@@ -66,6 +67,30 @@ function withCallLog(config) {
     }
     return config;
   });
+
+  // Also patch root build.gradle to hardcode the kotlinVersion fallback to 1.9.25
+  config = withDangerousMod(config, [
+    'android',
+    (config) => {
+      const buildGradlePath = path.join(
+        config.modRequest.projectRoot, 'android', 'build.gradle'
+      );
+      if (!fs.existsSync(buildGradlePath)) return config;
+      let src = fs.readFileSync(buildGradlePath, 'utf8');
+      // Replace the fallback default: ?: '1.9.24' → ?: '1.9.25'
+      src = src.replace(
+        /findProperty\('android\.kotlinVersion'\)\s*\?:\s*'1\.9\.24'/g,
+        "findProperty('android.kotlinVersion') ?: '1.9.25'"
+      );
+      // Also force-set it if no findProperty pattern (just set to literal)
+      src = src.replace(
+        /kotlinVersion\s*=\s*findProperty\('android\.kotlinVersion'\)\s*\?:\s*'[\d.]+'/,
+        "kotlinVersion = '1.9.25'"
+      );
+      fs.writeFileSync(buildGradlePath, src);
+      return config;
+    },
+  ]);
 
   return config;
 }
