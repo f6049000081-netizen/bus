@@ -87,6 +87,13 @@ function withCallLog(config) {
         /kotlinVersion\s*=\s*findProperty\('android\.kotlinVersion'\)\s*\?:\s*'[\d.]+'/,
         "kotlinVersion = '1.9.25'"
       );
+      // The classpath may omit the version (React Native BOM locks it to 1.9.24).
+      // Replace the versionless declaration with an explicit one so the correct
+      // kotlin-gradle-plugin is used for actual compilation.
+      src = src.replace(
+        /classpath\('org\.jetbrains\.kotlin:kotlin-gradle-plugin'\)/g,
+        "classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin:\${kotlinVersion}\")"
+      );
       fs.writeFileSync(buildGradlePath, src);
       return config;
     },
