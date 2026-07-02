@@ -22,12 +22,14 @@
       "permissions": [
         "android.permission.READ_CONTACTS",
         "android.permission.READ_CALL_LOG",
+        "android.permission.READ_SMS",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.WRITE_CONTACTS"
       ]
     },
     "plugins": [
+      "./plugins/withCallLog",
       "expo-router",
       "expo-font",
       "expo-notifications",
