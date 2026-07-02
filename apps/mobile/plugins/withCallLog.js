@@ -1,4 +1,4 @@
-const { withDangerousMod, withMainApplication } = require('@expo/config-plugins');
+const { withDangerousMod, withMainApplication, withGradleProperties } = require('@expo/config-plugins');
 const path = require('path');
 const fs   = require('fs');
 
@@ -50,6 +50,20 @@ function withCallLog(config) {
     }
 
     config.modResults.contents = src;
+    return config;
+  });
+
+  // Step 3: pin Kotlin to 1.9.25 so Compose Compiler 1.5.15 is satisfied
+  // (EAS can cache older node_modules that generate 1.9.24 by default)
+  config = withGradleProperties(config, (config) => {
+    const props = config.modResults;
+    const KEY = 'android.kotlinVersion';
+    const existing = props.find(p => p.type === 'property' && p.key === KEY);
+    if (!existing) {
+      props.push({ type: 'property', key: KEY, value: '1.9.25' });
+    } else {
+      existing.value = '1.9.25';
+    }
     return config;
   });
 
