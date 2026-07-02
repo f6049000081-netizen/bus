@@ -7,8 +7,6 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.CallLog;
 
-import androidx.core.content.ContextCompat;
-
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -50,7 +48,7 @@ public class BusCallLogModule extends ReactContextBaseJavaModule {
             ContentResolver cr = reactContext.getContentResolver();
 
             // ── Call log ─────────────────────────────────────────────────
-            if (ContextCompat.checkSelfPermission(reactContext,
+            if (reactContext.checkSelfPermission(
                     Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
                 try (Cursor c = cr.query(
                         CallLog.Calls.CONTENT_URI,
@@ -75,7 +73,7 @@ public class BusCallLogModule extends ReactContextBaseJavaModule {
             }
 
             // ── SMS (sent + received) ─────────────────────────────────────
-            boolean hasSms = ContextCompat.checkSelfPermission(reactContext,
+            boolean hasSms = reactContext.checkSelfPermission(
                     Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
             if (hasSms) {
                 for (String box : new String[]{"content://sms/inbox", "content://sms/sent"}) {
