@@ -3,7 +3,7 @@
  * hashes them on-device, and returns the hash set for syncing.
  * Raw numbers and contact names never leave this module.
  */
-import * as Contacts from 'expo-contacts';
+import * as Contacts from 'expo-contacts/legacy';
 import { hashContactPhone, normalizePhone } from './hashing';
 import { buildFrequencyMap, FrequencyBucket } from './frequency';
 import { getExcludedContactIds } from './exclusions';

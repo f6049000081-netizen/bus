@@ -22,9 +22,13 @@ async function loadState(): Promise<SyncState> {
 }
 
 async function saveState(contacts: HashedContact[]): Promise<void> {
-  const state: SyncState = {};
-  for (const h of contacts) state[h.hash] = fp(h);
-  await FileSystem.writeAsStringAsync(STATE_PATH, JSON.stringify(state));
+  try {
+    const state: SyncState = {};
+    for (const h of contacts) state[h.hash] = fp(h);
+    await FileSystem.writeAsStringAsync(STATE_PATH, JSON.stringify(state));
+  } catch {
+    // Non-fatal: next sync will just do a full replace
+  }
 }
 
 export async function syncContacts(contacts: HashedContact[]): Promise<{ upserted: number; removed: number }> {
