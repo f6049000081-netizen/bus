@@ -1,10 +1,13 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { getApiClient } from '@bus/shared';
 
-export async function registerForPushNotifications(): Promise<void> {
-  if (Platform.OS === 'web') return;
+const isExpoGo = Constants.executionEnvironment === 'storeClient';
 
+export async function registerForPushNotifications(): Promise<void> {
+  if (Platform.OS === 'web' || isExpoGo) return;
+
+  const Notifications = await import('expo-notifications');
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
   if (existing !== 'granted') {
@@ -24,11 +27,15 @@ export async function registerForPushNotifications(): Promise<void> {
 }
 
 export function setupNotificationHandler(): void {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+  if (isExpoGo) return;
+
+  import('expo-notifications').then((Notifications) => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
   });
 }
