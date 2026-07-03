@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@bus/shared": "*",
+    "@expo/vector-icons": "^15.1.1",
     "@tanstack/react-query": "^5.45.1",
     "expo": "^57.0.2",
     "expo-call-log": "file:./modules/call-log",
