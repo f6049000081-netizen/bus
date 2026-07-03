@@ -15,6 +15,7 @@ export interface HashedContact {
   monthCount: number;
   totalCount: number;
   localName?: string;
+  localPhone?: string;
   contactId?: string;
 }
 
@@ -57,6 +58,7 @@ export async function hashAllContacts(
         monthCount: freq?.monthCount ?? 0,
         totalCount: freq?.totalCount ?? 0,
         localName: contact.name,
+        localPhone: normalizePhone(phone.number, defaultCountry) ?? undefined,
         contactId: contact.id,
       });
     }

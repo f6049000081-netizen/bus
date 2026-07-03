@@ -39,10 +39,11 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
     const mapA = Object.fromEntries(hashesA.map((h) => [h.contactHash, h]));
     const mapB = Object.fromEntries(hashesB.map((h) => [h.contactHash, h]));
 
+    const comparisonId = uuid();
     const [comparison] = await prisma.$transaction([
       prisma.comparison.create({
         data: {
-          id: uuid(),
+          id: comparisonId,
           sessionId: session.id,
           userAId: session.initiatorId,
           userBId: req.userId,
@@ -51,6 +52,21 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
         },
       }),
       prisma.comparisonSession.update({ where: { id: session.id }, data: { usedAt: new Date() } }),
+      ...(mutual.length > 0
+        ? [prisma.mutualContact.createMany({
+            data: mutual.map((hash) => ({
+              id: uuid(),
+              comparisonId,
+              contactHash: hash,
+              aWeekCount: mapA[hash]?.callCountWeek ?? 0,
+              aMonthCount: mapA[hash]?.callCountMonth ?? 0,
+              aTotalCount: mapA[hash]?.callCountTotal ?? 0,
+              bWeekCount: mapB[hash]?.callCountWeek ?? 0,
+              bMonthCount: mapB[hash]?.callCountMonth ?? 0,
+              bTotalCount: mapB[hash]?.callCountTotal ?? 0,
+            })),
+          })]
+        : []),
     ]);
 
     // Notify initiator (fire-and-forget)

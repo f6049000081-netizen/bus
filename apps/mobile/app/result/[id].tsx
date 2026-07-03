@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator,
-  TouchableOpacity,
+  TouchableOpacity, Linking, Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getApiClient } from '@bus/shared';
-import { hashAllContacts, HashedContact, requestContactsPermission } from '../../src/services/contacts';
+import { hashAllContacts, requestContactsPermission } from '../../src/services/contacts';
 
 interface MutualItem {
   contactHash: string;
@@ -21,6 +21,7 @@ interface MutualItem {
 
 interface EnrichedMutual extends MutualItem {
   name: string;
+  phone: string | null;
   combinedScore: number;
   recentScore: number;
 }
@@ -36,7 +37,7 @@ type Tab = 'recent' | 'top10';
 
 const Colors = {
   background: '#0F172A', surface: '#1E293B', border: '#334155',
-  primary: '#6366F1', success: '#10B981', warning: '#F59E0B',
+  primary: '#6366F1', success: '#10B981',
   textPrimary: '#F1F5F9', textSecondary: '#94A3B8',
 };
 
@@ -53,11 +54,37 @@ function totalLabel(item: EnrichedMutual): string {
   return 'in both address books';
 }
 
+async function callNumber(phone: string) {
+  const url = `tel:${phone}`;
+  const supported = await Linking.canOpenURL(url);
+  if (supported) {
+    await Linking.openURL(url);
+  } else {
+    Alert.alert('Cannot call', 'Your device does not support phone calls.');
+  }
+}
+
 function ContactRow({ item, labelFn }: { item: EnrichedMutual; labelFn: (i: EnrichedMutual) => string }) {
   const initial = item.name.charAt(0).toUpperCase() || '?';
   const week = item.yourWeekCount + item.theirWeekCount;
+
+  const handlePress = () => {
+    if (!item.phone) {
+      Alert.alert('No number', 'Could not resolve a phone number for this contact.');
+      return;
+    }
+    Alert.alert(
+      `Call ${item.name}?`,
+      item.phone,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Call', onPress: () => callNumber(item.phone!) },
+      ]
+    );
+  };
+
   return (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={handlePress} activeOpacity={0.7}>
       <View style={styles.avatarWrap}>
         <Text style={styles.avatarText}>{initial}</Text>
       </View>
@@ -70,7 +97,8 @@ function ContactRow({ item, labelFn }: { item: EnrichedMutual; labelFn: (i: Enri
           <Text style={styles.badgeText}>this week</Text>
         </View>
       )}
-    </View>
+      <Text style={styles.callIcon}>📞</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -80,17 +108,22 @@ export default function ResultScreen() {
   const [mutualCount, setMutualCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('recent');
+  const listRef = useRef<FlatList>(null);
 
-  const resolveNames = useCallback(async (items: MutualItem[]): Promise<Record<string, string>> => {
-    const map: Record<string, string> = {};
+  const resolveContacts = useCallback(async (items: MutualItem[]): Promise<{ names: Record<string, string>; phones: Record<string, string> }> => {
+    const names: Record<string, string> = {};
+    const phones: Record<string, string> = {};
     const granted = await requestContactsPermission();
-    if (!granted || items.length === 0) return map;
-    const hashed: HashedContact[] = await hashAllContacts('');
+    if (!granted || items.length === 0) return { names, phones };
+    const hashed = await hashAllContacts('');
     const mutualSet = new Set(items.map(m => m.contactHash));
     for (const h of hashed) {
-      if (h.localName && mutualSet.has(h.hash)) map[h.hash] = h.localName;
+      if (mutualSet.has(h.hash)) {
+        if (h.localName) names[h.hash] = h.localName;
+        if (h.localPhone) phones[h.hash] = h.localPhone;
+      }
     }
-    return map;
+    return { names, phones };
   }, []);
 
   useEffect(() => {
@@ -98,10 +131,11 @@ export default function ResultScreen() {
     getApiClient().get<ComparisonResult>(`/api/comparison/${id}`)
       .then(async ({ data }) => {
         setMutualCount(data.mutualCount);
-        const nameMap = await resolveNames(data.mutuals);
+        const { names, phones } = await resolveContacts(data.mutuals);
         const enriched: EnrichedMutual[] = data.mutuals.map(m => ({
           ...m,
-          name: nameMap[m.contactHash] ?? 'Unknown Contact',
+          name: names[m.contactHash] ?? 'Unknown Contact',
+          phone: phones[m.contactHash] ?? null,
           combinedScore: m.yourTotalCount + m.theirTotalCount,
           recentScore: (m.yourWeekCount + m.theirWeekCount) * 4 + (m.yourMonthCount + m.theirMonthCount),
         }));
@@ -109,7 +143,12 @@ export default function ResultScreen() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [id, resolveNames]);
+  }, [id, resolveContacts]);
+
+  const switchTab = (next: Tab) => {
+    setTab(next);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  };
 
   const hasCallData = mutuals.some(m => m.combinedScore > 0);
 
@@ -143,9 +182,7 @@ export default function ResultScreen() {
       <View style={styles.center}>
         <Text style={styles.emptyEmoji}>🤷</Text>
         <Text style={styles.emptyTitle}>No mutual contacts</Text>
-        <Text style={styles.emptyBody}>
-          You don't share any contacts yet, or their contacts aren't synced.
-        </Text>
+        <Text style={styles.emptyBody}>You don't share any contacts yet, or their contacts aren't synced.</Text>
         <TouchableOpacity onPress={() => router.replace('/(app)' as never)} style={styles.backBtn}>
           <Text style={styles.backText}>← Home</Text>
         </TouchableOpacity>
@@ -156,9 +193,11 @@ export default function ResultScreen() {
   return (
     <View style={styles.container}>
       <FlatList
+        ref={listRef}
         data={activeList}
         keyExtractor={item => item.contactHash}
         renderItem={({ item }) => <ContactRow item={item} labelFn={labelFn} />}
+        removeClippedSubviews={false}
         ListHeaderComponent={
           <View>
             <View style={styles.header}>
@@ -173,8 +212,9 @@ export default function ResultScreen() {
             <View style={styles.tabs}>
               <TouchableOpacity
                 style={[styles.tabBtn, tab === 'recent' && styles.tabActive]}
-                onPress={() => setTab('recent')}
-                activeOpacity={0.8}
+                onPress={() => switchTab('recent')}
+                activeOpacity={0.75}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={[styles.tabText, tab === 'recent' && styles.tabTextActive]}>
                   Recently contacted
@@ -182,8 +222,9 @@ export default function ResultScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.tabBtn, tab === 'top10' && styles.tabActive]}
-                onPress={() => setTab('top10')}
-                activeOpacity={0.8}
+                onPress={() => switchTab('top10')}
+                activeOpacity={0.75}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={[styles.tabText, tab === 'top10' && styles.tabTextActive]}>
                   Top 10
@@ -192,20 +233,19 @@ export default function ResultScreen() {
             </View>
 
             {!hasCallData && (
-              <View style={styles.noDataBanner}>
-                <Text style={styles.noDataText}>
-                  Call & SMS data unavailable — showing contacts alphabetically.
-                  Sync contacts from a real device build for activity-based ranking.
+              <View style={styles.banner}>
+                <Text style={styles.bannerText}>
+                  Call & SMS data unavailable — contacts shown alphabetically. Install a device build to enable activity ranking.
                 </Text>
               </View>
             )}
 
             {hasCallData && activeList.length === 0 && (
-              <View style={styles.noDataBanner}>
-                <Text style={styles.noDataText}>
+              <View style={styles.banner}>
+                <Text style={styles.bannerText}>
                   {tab === 'recent'
-                    ? 'None of your mutual contacts have been contacted in the last 30 days.'
-                    : 'No call or SMS interactions recorded yet.'}
+                    ? 'No mutual contacts contacted in the last 30 days.'
+                    : 'No call or SMS data recorded yet.'}
                 </Text>
               </View>
             )}
@@ -226,20 +266,20 @@ const styles = StyleSheet.create({
   backText: { fontSize: 15, color: Colors.primary },
   title: { fontSize: 26, fontWeight: '700', color: Colors.textPrimary },
   tabs: {
-    flexDirection: 'row', marginHorizontal: 20, marginBottom: 8,
+    flexDirection: 'row', marginHorizontal: 20, marginBottom: 12,
     backgroundColor: Colors.surface, borderRadius: 12, padding: 4,
     borderWidth: 1, borderColor: Colors.border,
   },
-  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
+  tabBtn: { flex: 1, paddingVertical: 12, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   tabActive: { backgroundColor: Colors.primary },
   tabText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
   tabTextActive: { color: '#fff' },
-  noDataBanner: {
+  banner: {
     marginHorizontal: 20, marginBottom: 12, padding: 12,
     backgroundColor: Colors.surface, borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border,
   },
-  noDataText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
+  bannerText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
   listContent: { paddingBottom: 32 },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -261,6 +301,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.success + '60',
   },
   badgeText: { fontSize: 10, fontWeight: '600', color: Colors.success },
+  callIcon: { fontSize: 16 },
   emptyEmoji: { fontSize: 48, marginBottom: 16 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
   emptyBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 28 },

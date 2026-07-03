@@ -79,4 +79,22 @@ model Comparison {
   session             ComparisonSession @relation(fields: [sessionId], references: [id])
   userA               User              @relation("UserA", fields: [userAId], references: [id])
   userB               User              @relation("UserB", fields: [userBId], references: [id])
+  mutualContacts      MutualContact[]
+}
+
+model MutualContact {
+  id           String     @id @default(uuid())
+  comparisonId String
+  contactHash  String
+  aWeekCount   Int        @default(0)
+  aMonthCount  Int        @default(0)
+  aTotalCount  Int        @default(0)
+  bWeekCount   Int        @default(0)
+  bMonthCount  Int        @default(0)
+  bTotalCount  Int        @default(0)
+  createdAt    DateTime   @default(now())
+  comparison   Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+
+  @@index([comparisonId])
+  @@index([contactHash])
 }
