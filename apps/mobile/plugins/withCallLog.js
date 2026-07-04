@@ -92,7 +92,7 @@ function withCallLog(config) {
       // kotlin-gradle-plugin is used for actual compilation.
       src = src.replace(
         /classpath\('org\.jetbrains\.kotlin:kotlin-gradle-plugin'\)/g,
-        "classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin:\${kotlinVersion}\")"
+        "classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25')"
       );
       fs.writeFileSync(buildGradlePath, src);
       return config;
