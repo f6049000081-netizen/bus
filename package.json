@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
+    "build": "npm run build --workspace=apps/api",
+    "start": "cd apps/api && node dist/index.js",
     "lint": "turbo run lint"
   },
   "devDependencies": {
