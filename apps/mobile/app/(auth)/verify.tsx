@@ -55,10 +55,10 @@ export default function VerifyScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, padding: Spacing.xxl, justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: Colors.background, padding: Spacing.xxl, justifyContent: 'flex-start', paddingTop: 72 },
   logoRow: { marginBottom: Spacing.xxxl },
   title: { fontSize: FontSize.heading, fontFamily: Fonts.bold, color: Colors.textPrimary, marginBottom: Spacing.sm },
-  subtitle: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.xxxl },
+  subtitle: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.xl },
   input: { backgroundColor: Colors.surface, borderWidth: 2, borderColor: Colors.primary, borderRadius: Radii.md, padding: Spacing.lg, fontSize: 32, color: Colors.textPrimary, marginBottom: Spacing.xl, letterSpacing: 16 },
   button: { backgroundColor: Colors.primary, borderRadius: Radii.button, padding: Spacing.lg, alignItems: 'center', marginBottom: Spacing.lg },
   buttonText: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.white },
