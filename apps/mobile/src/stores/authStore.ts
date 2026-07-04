@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { getApiClient, AuthResponse, User } from '@bus/shared';
+import { saveCallerIdCredentials } from '../services/callerIdService';
 
 const REFRESH_KEY = 'bus_refresh_token';
 const SALT_KEY = 'bus_user_salt';
@@ -28,6 +29,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     await SecureStore.setItemAsync(REFRESH_KEY, data.refreshToken);
     await SecureStore.setItemAsync(SALT_KEY, data.salt);
     set({ accessToken: data.accessToken, user: data.user, salt: data.salt, isAuthenticated: true });
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? '';
+    saveCallerIdCredentials(data.accessToken, apiUrl).catch(() => {});
   },
 
   refreshToken: async () => {
@@ -58,6 +61,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data } = await getApiClient().post<{ accessToken: string }>('/api/auth/refresh', { refreshToken: rt });
       const { data: user } = await getApiClient().get<User>('/api/user/me');
       set({ accessToken: data.accessToken, user, salt, isAuthenticated: true });
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? '';
+      saveCallerIdCredentials(data.accessToken, apiUrl).catch(() => {});
     } catch {
       await SecureStore.deleteItemAsync(REFRESH_KEY);
       await SecureStore.deleteItemAsync(SALT_KEY);

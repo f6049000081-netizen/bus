@@ -10,6 +10,11 @@ import { useAuthStore } from '../../src/stores/authStore';
 import { requestContactsPermission, hashAllContacts } from '../../src/services/contacts';
 import { syncContacts } from '../../src/services/contactSync';
 import { hashContactPhone } from '../../src/services/hashing';
+import {
+  requestCallScreeningRole,
+  isCallScreeningEnabled,
+  updateCallerIdCache,
+} from '../../src/services/callerIdService';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
 import { LogoMark } from '../../src/components/LogoMark';
 
@@ -33,6 +38,9 @@ export default function HomeScreen() {
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState('');
 
+  const [callerIdEnabled, setCallerIdEnabled] = useState(false);
+  const [callerIdLoading, setCallerIdLoading] = useState(false);
+
   const [searchPhone, setSearchPhone] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
@@ -51,6 +59,7 @@ export default function HomeScreen() {
       const { upserted, removed } = await syncContacts(contacts);
       await SecureStore.setItemAsync(CONTACT_HASH_VERSION_KEY, CURRENT_VERSION);
       setSyncNote(`${contacts.length} contacts · ${upserted} updated · ${removed} removed`);
+      updateCallerIdCache(contacts).catch(() => {});
       if (!silent) Toast.show({ type: 'success', text1: 'Contacts synced', text2: `${upserted} updated, ${removed} removed` });
     } catch (err: unknown) {
       if (!silent) {
@@ -66,7 +75,25 @@ export default function HomeScreen() {
     SecureStore.getItemAsync(CONTACT_HASH_VERSION_KEY).then((v) => {
       if (v !== CURRENT_VERSION) doSync(true);
     });
+    isCallScreeningEnabled().then(setCallerIdEnabled);
   }, []);
+
+  const handleEnableCallerId = async () => {
+    setCallerIdLoading(true);
+    try {
+      const result = await requestCallScreeningRole();
+      if (result === 'GRANTED') {
+        setCallerIdEnabled(true);
+        Toast.show({ type: 'success', text1: 'Caller ID enabled', text2: 'BUS will identify incoming callers.' });
+      } else if (result === 'DENIED') {
+        Toast.show({ type: 'error', text1: 'Permission denied', text2: 'Grant via Settings → Default apps → Caller ID.' });
+      } else {
+        Toast.show({ type: 'info', text1: 'Not supported', text2: 'Requires Android 10 or later.' });
+      }
+    } finally {
+      setCallerIdLoading(false);
+    }
+  };
 
   const handleSearch = async () => {
     const trimmed = searchPhone.trim();
@@ -206,6 +233,33 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Caller ID card */}
+      <View style={styles.card}>
+        <View style={styles.callerIdHeader}>
+          <View>
+            <Text style={styles.cardTitle}>Incoming Caller ID</Text>
+            <Text style={styles.callerIdStatus}>
+              {callerIdEnabled ? '● Active' : '○ Not enabled'}
+            </Text>
+          </View>
+          {callerIdEnabled && (
+            <View style={styles.callerIdBadge}><Text style={styles.callerIdBadgeText}>ON</Text></View>
+          )}
+        </View>
+        <Text style={styles.cardBody}>
+          {callerIdEnabled
+            ? 'BUS will show the caller\'s name from your contacts or the BUS network on incoming calls.'
+            : 'Let BUS identify incoming calls. When a caller is found in your contacts or BUS network, their name appears on the call screen.'}
+        </Text>
+        {!callerIdEnabled && (
+          <TouchableOpacity style={styles.button} onPress={handleEnableCallerId} disabled={callerIdLoading} activeOpacity={0.85}>
+            {callerIdLoading
+              ? <ActivityIndicator color={Colors.white} />
+              : <Text style={styles.buttonText}>Enable Caller ID</Text>}
+          </TouchableOpacity>
+        )}
+      </View>
+
     </ScrollView>
   );
 }
@@ -260,4 +314,8 @@ const styles = StyleSheet.create({
   cardBody: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 22, marginBottom: Spacing.xl },
   button: { backgroundColor: Colors.primary, borderRadius: Radii.button, padding: Spacing.lg, alignItems: 'center' },
   buttonText: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.white },
+  callerIdHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  callerIdStatus: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.sm },
+  callerIdBadge: { backgroundColor: '#16a34a25', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  callerIdBadgeText: { fontSize: 11, fontFamily: Fonts.semiBold, color: '#16a34a', letterSpacing: 0.5 },
 });
