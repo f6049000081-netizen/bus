@@ -1,4 +1,4 @@
-const { withDangerousMod, withMainApplication, withGradleProperties } = require('@expo/config-plugins');
+const { withDangerousMod, withMainApplication, withGradleProperties } = require('expo/config-plugins');
 const path = require('path');
 const fs   = require('fs');
 
