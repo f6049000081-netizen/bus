@@ -48,8 +48,7 @@
           "contactsPermission": "Allow Between Us to access your contacts to find mutual connections. Raw contacts are never uploaded — only hashed identifiers."
         }
       ],
-      "expo-secure-store",
-      "expo-status-bar"
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": false
