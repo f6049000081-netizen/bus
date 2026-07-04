@@ -10,6 +10,7 @@ datasource db {
 model User {
   id          String   @id @default(uuid())
   phoneHash   String   @unique
+  lookupHash  String?  @unique
   phoneHint   String
   displayName String   @default("")
   salt        String

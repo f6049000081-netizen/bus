@@ -87,32 +87,41 @@ contactsRouter.patch('/sync', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Search by contact hash across all the caller's past comparisons
+// Search by contact hash: own contacts, BUS users, and past comparison matches
 contactsRouter.get('/search', async (req, res, next) => {
   try {
     const hash = z.string().length(64).parse(req.query.hash);
 
-    const matches = await prisma.mutualContact.findMany({
-      where: {
-        contactHash: hash,
-        comparison: { OR: [{ userAId: req.userId }, { userBId: req.userId }] },
-      },
-      include: {
-        comparison: {
-          select: {
-            id: true,
-            createdAt: true,
-            userAId: true,
-            userBId: true,
-            userA: { select: { displayName: true, phoneHint: true } },
-            userB: { select: { displayName: true, phoneHint: true } },
+    const [ownContact, busUser, mutualMatches] = await Promise.all([
+      prisma.contactHash.findUnique({
+        where: { userId_contactHash: { userId: req.userId, contactHash: hash } },
+      }),
+      prisma.user.findUnique({
+        where: { lookupHash: hash },
+        select: { id: true, displayName: true, phoneHint: true },
+      }),
+      prisma.mutualContact.findMany({
+        where: {
+          contactHash: hash,
+          comparison: { OR: [{ userAId: req.userId }, { userBId: req.userId }] },
+        },
+        include: {
+          comparison: {
+            select: {
+              id: true,
+              createdAt: true,
+              userAId: true,
+              userBId: true,
+              userA: { select: { displayName: true, phoneHint: true } },
+              userB: { select: { displayName: true, phoneHint: true } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
 
-    const results = matches.map((mc) => {
+    const comparisons = mutualMatches.map((mc) => {
       const isA = mc.comparison.userAId === req.userId;
       const other = isA ? mc.comparison.userB : mc.comparison.userA;
       return {
@@ -122,7 +131,16 @@ contactsRouter.get('/search', async (req, res, next) => {
       };
     });
 
-    res.json(results);
+    // Don't expose the searching user as a BUS match
+    const busMatch = busUser && busUser.id !== req.userId
+      ? { displayName: busUser.displayName || `…${busUser.phoneHint}`, phoneHint: busUser.phoneHint }
+      : null;
+
+    res.json({
+      ownContact: !!ownContact,
+      busUser: busMatch,
+      comparisons,
+    });
   } catch (err) { next(err); }
 });
 

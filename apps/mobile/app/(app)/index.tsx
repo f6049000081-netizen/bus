@@ -16,10 +16,16 @@ import { LogoMark } from '../../src/components/LogoMark';
 const CONTACT_HASH_VERSION_KEY = 'contact_hash_version';
 const CURRENT_VERSION = 'v3';
 
-interface SearchResult {
+interface ComparisonResult {
   comparisonId: string;
   comparedAt: string;
   otherUserName: string;
+}
+
+interface SearchResponse {
+  ownContact: boolean;
+  busUser: { displayName: string; phoneHint: string } | null;
+  comparisons: ComparisonResult[];
 }
 
 export default function HomeScreen() {
@@ -29,7 +35,7 @@ export default function HomeScreen() {
 
   const [searchPhone, setSearchPhone] = useState('');
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
   const [searchedName, setSearchedName] = useState('');
   const [searchError, setSearchError] = useState('');
 
@@ -67,7 +73,7 @@ export default function HomeScreen() {
     if (!trimmed) return;
     Keyboard.dismiss();
     setSearching(true);
-    setSearchResults(null);
+    setSearchResponse(null);
     setSearchError('');
     try {
       const hash = await hashContactPhone(trimmed);
@@ -78,11 +84,12 @@ export default function HomeScreen() {
       const contacts = await hashAllContacts('');
       const match = contacts.find(c => c.hash === hash);
       setSearchedName(match?.localName ?? trimmed);
-      const { data } = await getApiClient().get<SearchResult[]>(`/api/contacts/search?hash=${hash}`);
-      setSearchResults(data);
-      if (data.length === 0) setSearchError(`No contacts found for "${match?.localName ?? trimmed}"`);
+      const { data } = await getApiClient().get<SearchResponse>(`/api/contacts/search?hash=${hash}`);
+      setSearchResponse(data);
+      const hasAny = data.ownContact || data.busUser || data.comparisons.length > 0;
+      if (!hasAny) setSearchError(`No results found for "${match?.localName ?? trimmed}"`);
     } catch {
-      setSearchError('No contacts found for this number.');
+      setSearchError('Search failed. Try again.');
     } finally {
       setSearching(false);
     }
@@ -129,27 +136,61 @@ export default function HomeScreen() {
           <Text style={styles.noResults}>{searchError}</Text>
         )}
 
-        {searchResults !== null && searchResults.length > 0 && (
+        {searchResponse !== null && (searchResponse.ownContact || searchResponse.busUser || searchResponse.comparisons.length > 0) && (
           <View style={styles.resultsWrap}>
-            <Text style={styles.resultsHeader}>
-              "{searchedName}" — {searchResults.length} match{searchResults.length !== 1 ? 'es' : ''}
-            </Text>
-            <FlatList
-              data={searchResults}
-              keyExtractor={r => r.comparisonId}
-              scrollEnabled={false}
-              renderItem={({ item }) => (
-                <View style={styles.resultRow}>
-                  <View style={styles.resultAvatar}>
-                    <Text style={styles.resultAvatarText}>{item.otherUserName.charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={styles.resultBody}>
-                    <Text style={styles.resultName}>{item.otherUserName}</Text>
-                    <Text style={styles.resultDate}>{new Date(item.comparedAt).toLocaleDateString()}</Text>
-                  </View>
+            <Text style={styles.resultsHeader}>Results for "{searchedName}"</Text>
+
+            {searchResponse.ownContact && (
+              <View style={styles.resultRow}>
+                <View style={[styles.resultAvatar, styles.resultAvatarGreen]}>
+                  <Text style={[styles.resultAvatarText, styles.resultAvatarTextGreen]}>
+                    {searchedName.charAt(0).toUpperCase()}
+                  </Text>
                 </View>
-              )}
-            />
+                <View style={styles.resultBody}>
+                  <Text style={styles.resultName}>{searchedName}</Text>
+                  <Text style={styles.resultBadge}>From your contacts</Text>
+                </View>
+              </View>
+            )}
+
+            {searchResponse.busUser && (
+              <View style={styles.resultRow}>
+                <View style={[styles.resultAvatar, styles.resultAvatarBlue]}>
+                  <Text style={[styles.resultAvatarText, styles.resultAvatarTextBlue]}>
+                    {searchResponse.busUser.displayName.charAt(0).toUpperCase() || '?'}
+                  </Text>
+                </View>
+                <View style={styles.resultBody}>
+                  <Text style={styles.resultName}>{searchResponse.busUser.displayName || `…${searchResponse.busUser.phoneHint}`}</Text>
+                  <Text style={styles.resultBadge}>From BUS app</Text>
+                </View>
+              </View>
+            )}
+
+            {searchResponse.comparisons.length > 0 && (
+              <>
+                <Text style={[styles.resultsHeader, { marginTop: Spacing.md }]}>
+                  Shared in {searchResponse.comparisons.length} comparison{searchResponse.comparisons.length !== 1 ? 's' : ''}
+                </Text>
+                <FlatList
+                  data={searchResponse.comparisons}
+                  keyExtractor={r => r.comparisonId}
+                  scrollEnabled={false}
+                  renderItem={({ item }) => (
+                    <View style={styles.resultRow}>
+                      <View style={styles.resultAvatar}>
+                        <Text style={styles.resultAvatarText}>{item.otherUserName.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <View style={styles.resultBody}>
+                        <Text style={styles.resultName}>{item.otherUserName}</Text>
+                        <Text style={styles.resultDate}>{new Date(item.comparedAt).toLocaleDateString()}</Text>
+                      </View>
+                    </View>
+                  )}
+                />
+              </>
+            )}
           </View>
         )}
       </View>
@@ -200,10 +241,15 @@ const styles = StyleSheet.create({
   noResults: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 20 },
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
   resultAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary + '25', justifyContent: 'center', alignItems: 'center' },
+  resultAvatarGreen: { backgroundColor: '#16a34a25' },
+  resultAvatarBlue: { backgroundColor: '#2563eb25' },
   resultAvatarText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  resultAvatarTextGreen: { color: '#16a34a' },
+  resultAvatarTextBlue: { color: '#2563eb' },
   resultBody: { flex: 1 },
   resultName: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.textPrimary },
   resultDate: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary },
+  resultBadge: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: Radii.card,

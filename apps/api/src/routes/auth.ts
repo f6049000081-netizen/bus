@@ -6,7 +6,7 @@ import { v4 as uuid } from 'uuid';
 import rateLimit from 'express-rate-limit';
 import prisma from '../services/prisma';
 import { sendOtp, verifyOtp } from '../services/sms';
-import { generateSalt, hashPhone } from '../services/psi';
+import { generateSalt, hashPhone, hashForLookup } from '../services/psi';
 
 const authRouter = Router();
 
@@ -38,14 +38,17 @@ authRouter.post('/verify-otp', otpLimiter, async (req, res, next) => {
     if (!approved) { res.status(401).json({ message: 'Invalid or expired OTP' }); return; }
 
     const phoneHint = phone.slice(-4);
-    const salt = generateSalt();
-    const phoneHash = hashPhone(salt, phone);
+    const lookup = hashForLookup(phone);
 
-    let user = await prisma.user.findUnique({ where: { phoneHash } });
+    let user = await prisma.user.findUnique({ where: { lookupHash: lookup } });
     if (!user) {
+      const salt = generateSalt();
+      const phoneHash = hashPhone(salt, phone);
       user = await prisma.user.create({
-        data: { id: uuid(), phoneHash, phoneHint, displayName: displayName ?? '', salt },
+        data: { id: uuid(), phoneHash, lookupHash: lookup, phoneHint, displayName: displayName ?? '', salt },
       });
+    } else if (!user.lookupHash) {
+      user = await prisma.user.update({ where: { id: user.id }, data: { lookupHash: lookup } });
     }
 
     const accessToken = jwt.sign({ sub: user.id }, process.env.JWT_ACCESS_SECRET!, { expiresIn: '15m' });
