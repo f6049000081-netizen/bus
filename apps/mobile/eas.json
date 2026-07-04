@@ -14,7 +14,7 @@
       "android": { "buildType": "apk" },
       "ios": { "simulator": false },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://session-relatively-leaves-tape.trycloudflare.com"
+        "EXPO_PUBLIC_API_URL": "https://api-production-8cea.up.railway.app"
       }
     },
     "production": {
