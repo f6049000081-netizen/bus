@@ -31,6 +31,7 @@ export default function HomeScreen() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
   const [searchedName, setSearchedName] = useState('');
+  const [searchError, setSearchError] = useState('');
 
   const doSync = async (silent = false) => {
     const granted = await requestContactsPermission();
@@ -67,10 +68,11 @@ export default function HomeScreen() {
     Keyboard.dismiss();
     setSearching(true);
     setSearchResults(null);
+    setSearchError('');
     try {
       const hash = await hashContactPhone(trimmed);
       if (!hash) {
-        Toast.show({ type: 'error', text1: 'Invalid number', text2: 'Use international format, e.g. +2519xxxxxxxx' });
+        setSearchError('Enter a valid international number, e.g. +2519xxxxxxxx');
         return;
       }
       const contacts = await hashAllContacts('');
@@ -78,8 +80,9 @@ export default function HomeScreen() {
       setSearchedName(match?.localName ?? trimmed);
       const { data } = await getApiClient().get<SearchResult[]>(`/api/contacts/search?hash=${hash}`);
       setSearchResults(data);
+      if (data.length === 0) setSearchError(`No contacts found for "${match?.localName ?? trimmed}"`);
     } catch {
-      Toast.show({ type: 'error', text1: 'Search failed' });
+      setSearchError('No contacts found for this number.');
     } finally {
       setSearching(false);
     }
@@ -101,12 +104,19 @@ export default function HomeScreen() {
           <TextInput
             style={styles.searchInput}
             value={searchPhone}
-            onChangeText={setSearchPhone}
+            onChangeText={(t) => {
+              // Only allow +, digits, spaces, dashes, parens
+              const filtered = t.replace(/[^\d+\s\-()]/g, '');
+              setSearchPhone(filtered);
+              setSearchError('');
+              setSearchResults(null);
+            }}
             placeholder="+2519xxxxxxxx"
             placeholderTextColor={Colors.textSecondary}
             keyboardType="phone-pad"
             returnKeyType="search"
             onSubmitEditing={handleSearch}
+            maxLength={20}
           />
           <TouchableOpacity style={styles.searchBtn} onPress={handleSearch} disabled={searching} activeOpacity={0.85}>
             {searching
@@ -115,33 +125,31 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {searchResults !== null && (
+        {searchError !== '' && (
+          <Text style={styles.noResults}>{searchError}</Text>
+        )}
+
+        {searchResults !== null && searchResults.length > 0 && (
           <View style={styles.resultsWrap}>
-            {searchResults.length === 0 ? (
-              <Text style={styles.noResults}>"{searchedName}" hasn't appeared in any of your comparisons yet.</Text>
-            ) : (
-              <>
-                <Text style={styles.resultsHeader}>
-                  "{searchedName}" — {searchResults.length} match{searchResults.length !== 1 ? 'es' : ''}
-                </Text>
-                <FlatList
-                  data={searchResults}
-                  keyExtractor={r => r.comparisonId}
-                  scrollEnabled={false}
-                  renderItem={({ item }) => (
-                    <View style={styles.resultRow}>
-                      <View style={styles.resultAvatar}>
-                        <Text style={styles.resultAvatarText}>{item.otherUserName.charAt(0).toUpperCase()}</Text>
-                      </View>
-                      <View style={styles.resultBody}>
-                        <Text style={styles.resultName}>{item.otherUserName}</Text>
-                        <Text style={styles.resultDate}>{new Date(item.comparedAt).toLocaleDateString()}</Text>
-                      </View>
-                    </View>
-                  )}
-                />
-              </>
-            )}
+            <Text style={styles.resultsHeader}>
+              "{searchedName}" — {searchResults.length} match{searchResults.length !== 1 ? 'es' : ''}
+            </Text>
+            <FlatList
+              data={searchResults}
+              keyExtractor={r => r.comparisonId}
+              scrollEnabled={false}
+              renderItem={({ item }) => (
+                <View style={styles.resultRow}>
+                  <View style={styles.resultAvatar}>
+                    <Text style={styles.resultAvatarText}>{item.otherUserName.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.resultBody}>
+                    <Text style={styles.resultName}>{item.otherUserName}</Text>
+                    <Text style={styles.resultDate}>{new Date(item.comparedAt).toLocaleDateString()}</Text>
+                  </View>
+                </View>
+              )}
+            />
           </View>
         )}
       </View>

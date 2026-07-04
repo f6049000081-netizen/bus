@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { HashedContact } from './contacts';
 import { getApiClient } from '@bus/shared';
 
