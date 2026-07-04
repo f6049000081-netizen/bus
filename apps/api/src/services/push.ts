@@ -2,7 +2,7 @@ import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 
 const expo = new Expo();
 
-export async function sendPushToUser(userId: string, message: { title: string; body: string; data?: object }): Promise<void> {
+export async function sendPushToUser(userId: string, message: { title: string; body: string; data?: Record<string, unknown> }): Promise<void> {
   const { default: prisma } = await import('./prisma');
   const tokens = await prisma.pushToken.findMany({ where: { userId } });
   if (!tokens.length) return;
