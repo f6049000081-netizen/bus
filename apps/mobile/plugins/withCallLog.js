@@ -39,13 +39,13 @@ function withCallLog(config) {
       // Kotlin style
       src = src.replace(
         ANCHOR,
-        `${ANCHOR}\n          packages.add(BusCallLogPackage())`
+        `${ANCHOR}\n          add(BusCallLogPackage())`
       );
     } else {
       // Fallback: insert before `return packages` inside getPackages
       src = src.replace(
         /(\s+)(return packages\s*\n)/,
-        '$1packages.add(BusCallLogPackage())\n$1$2'
+        '$1add(BusCallLogPackage())\n$1$2'
       );
     }
 
