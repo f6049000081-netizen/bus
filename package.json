@@ -2,7 +2,10 @@
   "name": "bus",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -13,5 +16,10 @@
     "typescript": "^5.4.0"
   },
   "packageManager": "npm@10.9.2",
-  "engines": { "node": ">=20.0.0" }
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
 }

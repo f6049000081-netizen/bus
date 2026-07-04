@@ -8,6 +8,7 @@ import userRouter from './routes/user';
 import notificationsRouter from './routes/notifications';
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
 app.use(rateLimit({ windowMs: 60_000, max: 120 }));
 
