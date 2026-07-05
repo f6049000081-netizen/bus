@@ -116,9 +116,7 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    SecureStore.getItemAsync(CONTACT_HASH_VERSION_KEY).then((v) => {
-      if (v !== CURRENT_VERSION) doSync(true);
-    });
+    doSync(true); // always silently sync on startup
 
     isCallScreeningEnabled().then((enabled) => {
       setCallerIdEnabled(enabled);
@@ -183,7 +181,12 @@ export default function HomeScreen() {
       setSearchedName(match?.localName ?? '');
       const { data } = await getApiClient().get<SearchResponse>(`/api/contacts/search?hash=${hash}`);
       setSearchResponse(data);
-      const hasAny = data.ownContact || data.busUser || data.inBusDatabase > 0 || data.comparisons.length > 0;
+      const hasAny =
+        data.ownContact ||
+        data.busUser ||
+        data.inBusDatabase > 0 ||
+        (data.savedByUsers?.length ?? 0) > 0 ||
+        data.comparisons.length > 0;
       if (!hasAny) setSearchError(`"${trimmed}" was not found in BUS`);
     } catch {
       setSearchError('Search failed. Try again.');
@@ -272,7 +275,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {searchResponse.savedByUsers.length > 0 && (
+            {(searchResponse.savedByUsers?.length ?? 0) > 0 && (
               <>
                 <Text style={[styles.resultsHeader, { marginTop: Spacing.md }]}>
                   In contacts of {searchResponse.savedByUsers.length} BUS user{searchResponse.savedByUsers.length !== 1 ? 's' : ''}

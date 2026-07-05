@@ -16,41 +16,41 @@ export function IntroAnimation({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     Animated.sequence([
-      // ① Circles fly in from both sides
+      // ① Circles fly in from both sides  (700ms)
       Animated.parallel([
         Animated.timing(leftX, {
           toValue: -FINAL_OFFSET,
-          duration: 520,
+          duration: 700,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(rightX, {
           toValue: FINAL_OFFSET,
-          duration: 520,
+          duration: 700,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
       ]),
-      // ② Eye-white appears
+      // ② Eye-white appears  (180ms)
       Animated.timing(eyeScale, {
         toValue: 1,
-        duration: 160,
+        duration: 180,
         easing: Easing.out(Easing.back(1.3)),
         useNativeDriver: true,
       }),
-      // ③ Pupil / iris drops in
+      // ③ Pupil / iris drops in  (150ms)
       Animated.timing(pupilScale, {
         toValue: 1,
-        duration: 130,
+        duration: 150,
         easing: Easing.out(Easing.back(1.5)),
         useNativeDriver: true,
       }),
-      // ④ Hold
-      Animated.delay(120),
-      // ⑤ Fade out
+      // ④ Hold  (720ms — gives ~2 s total with fade)
+      Animated.delay(720),
+      // ⑤ Fade out  (250ms)
       Animated.timing(rootOpacity, {
         toValue: 0,
-        duration: 180,
+        duration: 250,
         useNativeDriver: true,
       }),
     ]).start(() => onDone());
