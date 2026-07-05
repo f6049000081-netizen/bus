@@ -143,7 +143,7 @@ export default function HomeScreen() {
               const filtered = t.replace(/[^\d+\s\-()]/g, '');
               setSearchPhone(filtered);
               setSearchError('');
-              setSearchResults(null);
+              setSearchResponse(null);
             }}
             placeholder="+2519xxxxxxxx"
             placeholderTextColor={Colors.textSecondary}
