@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  ScrollView, TextInput, FlatList, Keyboard,
+  ScrollView, TextInput, AppState, Keyboard,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
@@ -112,9 +112,33 @@ export default function HomeScreen() {
     SecureStore.getItemAsync(CONTACT_HASH_VERSION_KEY).then((v) => {
       if (v !== CURRENT_VERSION) doSync(true);
     });
-    isCallScreeningEnabled().then(setCallerIdEnabled);
+
+    isCallScreeningEnabled().then((enabled) => {
+      setCallerIdEnabled(enabled);
+      if (!enabled) {
+        // Auto-prompt to set BUS as the default caller ID app on first open
+        setTimeout(async () => {
+          const result = await requestCallScreeningRole();
+          if (result === 'GRANTED') setCallerIdEnabled(true);
+        }, 800);
+      }
+    });
+
     loadRecentCalls();
-  }, []);
+
+    // Refresh call list every 5 seconds
+    const interval = setInterval(loadRecentCalls, 5000);
+
+    // Refresh when app comes back to foreground
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadRecentCalls();
+    });
+
+    return () => {
+      clearInterval(interval);
+      appStateSub.remove();
+    };
+  }, [loadRecentCalls]);
 
   const handleEnableCallerId = async () => {
     setCallerIdLoading(true);
@@ -173,7 +197,7 @@ export default function HomeScreen() {
       {/* Header */}
       <View style={styles.header}>
         <LogoMark variant="inline" />
-        <Text style={styles.greeting}>Hi{user?.displayName ? `, ${user.displayName}` : ''}</Text>
+        {user?.displayName ? <Text style={styles.greeting}>{user.displayName}</Text> : null}
       </View>
 
       {/* Search */}
