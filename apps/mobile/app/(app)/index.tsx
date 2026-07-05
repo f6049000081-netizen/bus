@@ -16,6 +16,7 @@ import {
   updateCallerIdCache,
 } from '../../src/services/callerIdService';
 import { getRecentCalls, type RecentCall } from '../../src/services/callLog';
+import { bulkLookupNumbers, type BusLookupResult } from '../../src/services/busLookup';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
 import { LogoMark } from '../../src/components/LogoMark';
 
@@ -32,6 +33,7 @@ interface SearchResponse {
   ownContact: boolean;
   busUser: { displayName: string; phoneHint: string } | null;
   inBusDatabase: number;
+  savedByUsers: Array<{ displayName: string; phoneHint: string }>;
   comparisons: ComparisonResult[];
 }
 
@@ -73,12 +75,17 @@ export default function HomeScreen() {
 
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [callsLoading, setCallsLoading] = useState(false);
+  const [busNames, setBusNames] = useState<Map<string, BusLookupResult>>(new Map());
 
   const loadRecentCalls = useCallback(async () => {
     setCallsLoading(true);
     try {
       const calls = await getRecentCalls(30);
       setRecentCalls(calls);
+      if (calls.length > 0) {
+        const unique = [...new Set(calls.map((c) => c.number))];
+        bulkLookupNumbers(unique).then(setBusNames).catch(() => {});
+      }
     } finally {
       setCallsLoading(false);
     }
@@ -265,18 +272,28 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {searchResponse.inBusDatabase > 0 && !searchResponse.ownContact && !searchResponse.busUser && (
-              <View style={styles.resultRow}>
-                <View style={[styles.resultAvatar, styles.avatarOrange]}>
-                  <Text style={[styles.avatarText, styles.avatarTextOrange]}>DB</Text>
-                </View>
-                <View style={styles.resultBody}>
-                  <Text style={styles.resultName}>{searchedPhone}</Text>
-                  <Text style={styles.resultSub}>
-                    Saved by {searchResponse.inBusDatabase} BUS user{searchResponse.inBusDatabase !== 1 ? 's' : ''}
-                  </Text>
-                </View>
-              </View>
+            {searchResponse.savedByUsers.length > 0 && (
+              <>
+                <Text style={[styles.resultsHeader, { marginTop: Spacing.md }]}>
+                  In contacts of {searchResponse.savedByUsers.length} BUS user{searchResponse.savedByUsers.length !== 1 ? 's' : ''}
+                </Text>
+                {searchResponse.savedByUsers.map((u, i) => (
+                  <View key={i} style={styles.resultRow}>
+                    <View style={[styles.resultAvatar, styles.avatarOrange]}>
+                      <Text style={[styles.avatarText, styles.avatarTextOrange]}>
+                        {(u.displayName || '?').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.resultBody}>
+                      <Text style={styles.resultName}>{u.displayName}</Text>
+                      <Text style={styles.resultSub}>Has {searchedPhone} saved</Text>
+                    </View>
+                    <View style={styles.busBadgePill}>
+                      <Text style={styles.busBadgePillText}>BUS</Text>
+                    </View>
+                  </View>
+                ))}
+              </>
             )}
 
             {searchResponse.comparisons.length > 0 && (
@@ -318,21 +335,40 @@ export default function HomeScreen() {
 
         {recentCalls.map((call, i) => {
           const meta = CALL_ICON[call.type] ?? CALL_ICON.unknown;
+          const busInfo = busNames.get(call.number);
+          // Prefer device contact name, then BUS name, then raw number
+          const displayName = call.cachedName || busInfo?.displayName || call.number;
+          const fromBus = !call.cachedName && !!busInfo;
+          const subParts: string[] = [];
+          if (displayName !== call.number) subParts.push(call.number);
+          if (fromBus && busInfo?.source === 'in_contacts' && busInfo.savedBy.length > 0) {
+            subParts.push(`saved by ${busInfo.savedBy.slice(0, 2).join(', ')}`);
+          }
+          subParts.push(relativeTime(call.date));
+          if (call.type === 'incoming' && call.duration > 0) {
+            subParts.push(`${Math.floor(call.duration / 60)}m${call.duration % 60}s`);
+          }
           return (
             <TouchableOpacity key={i} style={styles.callRow} onPress={() => tapCallNumber(call.number)} activeOpacity={0.7}>
               <View style={[styles.callTypeBox, { backgroundColor: meta.color + '20' }]}>
                 <Text style={[styles.callTypeIcon, { color: meta.color }]}>{meta.icon}</Text>
               </View>
               <View style={styles.resultBody}>
-                <Text style={styles.resultName} numberOfLines={1}>
-                  {call.cachedName || call.number}
-                </Text>
-                <Text style={styles.resultSub}>
-                  {call.cachedName ? call.number + ' · ' : ''}{relativeTime(call.date)}
-                  {call.type === 'incoming' && call.duration > 0 ? ` · ${Math.floor(call.duration / 60)}m${call.duration % 60}s` : ''}
+                <View style={styles.callNameRow}>
+                  <Text style={[styles.resultName, { flexShrink: 1 }]} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  {fromBus && (
+                    <View style={styles.busBadgePill}>
+                      <Text style={styles.busBadgePillText}>BUS</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.resultSub} numberOfLines={1}>
+                  {subParts.join(' · ')}
                 </Text>
               </View>
-              <Text style={styles.callSearchHint}>Search →</Text>
+              <Text style={styles.callSearchHint}>→</Text>
             </TouchableOpacity>
           );
         })}
@@ -427,6 +463,19 @@ const styles = StyleSheet.create({
   callTypeBox: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   callTypeIcon: { fontSize: 16, fontWeight: '700' },
   callSearchHint: { fontSize: 11, color: Colors.textSecondary, fontFamily: Fonts.regular },
+  callNameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexWrap: 'nowrap' },
+  busBadgePill: {
+    backgroundColor: Colors.primary + '30',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  busBadgePillText: {
+    fontSize: 9,
+    fontFamily: Fonts.semiBold,
+    color: Colors.primaryLight,
+    letterSpacing: 0.5,
+  },
 
   callerIdHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   callerIdStatus: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.sm },

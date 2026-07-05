@@ -87,12 +87,12 @@ contactsRouter.patch('/sync', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Search by contact hash: own contacts, BUS users, and past comparison matches
+// Search by contact hash: own contacts, BUS users, who-saved-it, and past comparison matches
 contactsRouter.get('/search', async (req, res, next) => {
   try {
     const hash = z.string().length(64).parse(req.query.hash);
 
-    const [ownContact, busUser, busDbCount, mutualMatches] = await Promise.all([
+    const [ownContact, busUser, savedByEntries, mutualMatches] = await Promise.all([
       prisma.contactHash.findUnique({
         where: { userId_contactHash: { userId: req.userId, contactHash: hash } },
       }),
@@ -100,8 +100,11 @@ contactsRouter.get('/search', async (req, res, next) => {
         where: { lookupHash: hash },
         select: { id: true, displayName: true, phoneHint: true },
       }),
-      prisma.contactHash.count({
+      // BUS users who have this number saved as a contact
+      prisma.contactHash.findMany({
         where: { contactHash: hash, userId: { not: req.userId } },
+        include: { user: { select: { id: true, displayName: true, phoneHint: true } } },
+        take: 10,
       }),
       prisma.mutualContact.findMany({
         where: {
@@ -134,17 +137,76 @@ contactsRouter.get('/search', async (req, res, next) => {
       };
     });
 
-    // Don't expose the searching user as a BUS match
     const busMatch = busUser && busUser.id !== req.userId
       ? { displayName: busUser.displayName || `…${busUser.phoneHint}`, phoneHint: busUser.phoneHint }
       : null;
 
+    // Users who have this number in their contacts (excludes the number's owner if they're a BUS user)
+    const savedByUsers = savedByEntries
+      .filter((e) => e.userId !== busUser?.id)
+      .map((e) => ({
+        displayName: e.user.displayName || `…${e.user.phoneHint}`,
+        phoneHint: e.user.phoneHint,
+      }));
+
     res.json({
       ownContact: !!ownContact,
       busUser: busMatch,
-      inBusDatabase: busDbCount,
+      inBusDatabase: savedByEntries.length,
+      savedByUsers,
       comparisons,
     });
+  } catch (err) { next(err); }
+});
+
+// Bulk lookup: given an array of contact hashes return name + source for each
+contactsRouter.post('/bulk-lookup', async (req, res, next) => {
+  try {
+    const { hashes } = z.object({
+      hashes: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(50),
+    }).parse(req.body);
+
+    const [busUsers, contactEntries] = await Promise.all([
+      prisma.user.findMany({
+        where: { lookupHash: { in: hashes } },
+        select: { lookupHash: true, displayName: true, phoneHint: true },
+      }),
+      prisma.contactHash.findMany({
+        where: { contactHash: { in: hashes }, userId: { not: req.userId } },
+        include: { user: { select: { displayName: true, phoneHint: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    type LookupEntry = {
+      displayName: string;
+      phoneHint: string;
+      source: 'bus_user' | 'in_contacts';
+      savedBy: string[];
+    };
+
+    const result: Record<string, LookupEntry> = {};
+
+    for (const u of busUsers) {
+      if (u.lookupHash) {
+        result[u.lookupHash] = {
+          displayName: u.displayName || `…${u.phoneHint}`,
+          phoneHint: u.phoneHint,
+          source: 'bus_user',
+          savedBy: [],
+        };
+      }
+    }
+
+    for (const c of contactEntries) {
+      if (result[c.contactHash]?.source === 'bus_user') continue; // already have a better match
+      if (!result[c.contactHash]) {
+        result[c.contactHash] = { displayName: '', phoneHint: '', source: 'in_contacts', savedBy: [] };
+      }
+      result[c.contactHash].savedBy.push(c.user.displayName || `…${c.user.phoneHint}`);
+    }
+
+    res.json(result);
   } catch (err) { next(err); }
 });
 
