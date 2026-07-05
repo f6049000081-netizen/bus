@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   ScrollView, TextInput, FlatList, Keyboard,
@@ -15,6 +15,7 @@ import {
   isCallScreeningEnabled,
   updateCallerIdCache,
 } from '../../src/services/callerIdService';
+import { getRecentCalls, type RecentCall } from '../../src/services/callLog';
 import { Colors, FontSize, Spacing, Radii, Fonts } from '../../src/constants/theme';
 import { LogoMark } from '../../src/components/LogoMark';
 
@@ -30,8 +31,30 @@ interface ComparisonResult {
 interface SearchResponse {
   ownContact: boolean;
   busUser: { displayName: string; phoneHint: string } | null;
+  inBusDatabase: number;
   comparisons: ComparisonResult[];
 }
+
+function relativeTime(ms: number): string {
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1)   return 'Just now';
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)   return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7)   return `${days}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+const CALL_ICON: Record<string, { icon: string; color: string }> = {
+  incoming:  { icon: '↙', color: '#2563eb' },
+  outgoing:  { icon: '↗', color: '#16a34a' },
+  missed:    { icon: '✕', color: '#dc2626' },
+  rejected:  { icon: '✕', color: '#dc2626' },
+  unknown:   { icon: '·', color: Colors.textSecondary ?? '#888' },
+};
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
@@ -43,9 +66,23 @@ export default function HomeScreen() {
 
   const [searchPhone, setSearchPhone] = useState('');
   const [searching, setSearching] = useState(false);
+  const [searchedPhone, setSearchedPhone] = useState('');
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
   const [searchedName, setSearchedName] = useState('');
   const [searchError, setSearchError] = useState('');
+
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
+  const [callsLoading, setCallsLoading] = useState(false);
+
+  const loadRecentCalls = useCallback(async () => {
+    setCallsLoading(true);
+    try {
+      const calls = await getRecentCalls(30);
+      setRecentCalls(calls);
+    } finally {
+      setCallsLoading(false);
+    }
+  }, []);
 
   const doSync = async (silent = false) => {
     const granted = await requestContactsPermission();
@@ -76,6 +113,7 @@ export default function HomeScreen() {
       if (v !== CURRENT_VERSION) doSync(true);
     });
     isCallScreeningEnabled().then(setCallerIdEnabled);
+    loadRecentCalls();
   }, []);
 
   const handleEnableCallerId = async () => {
@@ -102,19 +140,20 @@ export default function HomeScreen() {
     setSearching(true);
     setSearchResponse(null);
     setSearchError('');
+    setSearchedPhone(trimmed);
     try {
       const hash = await hashContactPhone(trimmed);
       if (!hash) {
-        setSearchError('Enter a valid international number, e.g. +2519xxxxxxxx');
+        setSearchError('Enter a valid number, e.g. +2519xxxxxxxx or 09xxxxxxxx');
         return;
       }
       const contacts = await hashAllContacts('');
       const match = contacts.find(c => c.hash === hash);
-      setSearchedName(match?.localName ?? trimmed);
+      setSearchedName(match?.localName ?? '');
       const { data } = await getApiClient().get<SearchResponse>(`/api/contacts/search?hash=${hash}`);
       setSearchResponse(data);
-      const hasAny = data.ownContact || data.busUser || data.comparisons.length > 0;
-      if (!hasAny) setSearchError(`No results found for "${match?.localName ?? trimmed}"`);
+      const hasAny = data.ownContact || data.busUser || data.inBusDatabase > 0 || data.comparisons.length > 0;
+      if (!hasAny) setSearchError(`"${trimmed}" was not found in BUS`);
     } catch {
       setSearchError('Search failed. Try again.');
     } finally {
@@ -122,16 +161,22 @@ export default function HomeScreen() {
     }
   };
 
+  const tapCallNumber = (number: string) => {
+    setSearchPhone(number);
+    setSearchResponse(null);
+    setSearchError('');
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
 
-      {/* Compact header */}
+      {/* Header */}
       <View style={styles.header}>
         <LogoMark variant="inline" />
         <Text style={styles.greeting}>Hi{user?.displayName ? `, ${user.displayName}` : ''}</Text>
       </View>
 
-      {/* Search bar — top of content */}
+      {/* Search */}
       <View style={styles.searchCard}>
         <Text style={styles.searchLabel}>Search a number</Text>
         <View style={styles.searchRow}>
@@ -139,13 +184,12 @@ export default function HomeScreen() {
             style={styles.searchInput}
             value={searchPhone}
             onChangeText={(t) => {
-              // Only allow +, digits, spaces, dashes, parens
               const filtered = t.replace(/[^\d+\s\-()]/g, '');
               setSearchPhone(filtered);
               setSearchError('');
               setSearchResponse(null);
             }}
-            placeholder="+2519xxxxxxxx"
+            placeholder="+2519xxxxxxxx or 09xxxxxxxx"
             placeholderTextColor={Colors.textSecondary}
             keyboardType="phone-pad"
             returnKeyType="search"
@@ -159,38 +203,54 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {searchError !== '' && (
-          <Text style={styles.noResults}>{searchError}</Text>
-        )}
+        {searchError !== '' && <Text style={styles.noResults}>{searchError}</Text>}
 
-        {searchResponse !== null && (searchResponse.ownContact || searchResponse.busUser || searchResponse.comparisons.length > 0) && (
+        {searchResponse !== null && (
           <View style={styles.resultsWrap}>
-            <Text style={styles.resultsHeader}>Results for "{searchedName}"</Text>
+            <Text style={styles.resultsHeader}>
+              {searchedPhone}{searchedName ? ` · ${searchedName}` : ''}
+            </Text>
 
             {searchResponse.ownContact && (
               <View style={styles.resultRow}>
-                <View style={[styles.resultAvatar, styles.resultAvatarGreen]}>
-                  <Text style={[styles.resultAvatarText, styles.resultAvatarTextGreen]}>
-                    {searchedName.charAt(0).toUpperCase()}
+                <View style={[styles.resultAvatar, styles.avatarGreen]}>
+                  <Text style={[styles.avatarText, styles.avatarTextGreen]}>
+                    {(searchedName || searchedPhone).charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={styles.resultBody}>
-                  <Text style={styles.resultName}>{searchedName}</Text>
-                  <Text style={styles.resultBadge}>From your contacts</Text>
+                  <Text style={styles.resultName}>{searchedName || searchedPhone}</Text>
+                  <Text style={styles.resultSub}>{searchedPhone} · Your contact</Text>
                 </View>
               </View>
             )}
 
             {searchResponse.busUser && (
               <View style={styles.resultRow}>
-                <View style={[styles.resultAvatar, styles.resultAvatarBlue]}>
-                  <Text style={[styles.resultAvatarText, styles.resultAvatarTextBlue]}>
-                    {searchResponse.busUser.displayName.charAt(0).toUpperCase() || '?'}
+                <View style={[styles.resultAvatar, styles.avatarBlue]}>
+                  <Text style={[styles.avatarText, styles.avatarTextBlue]}>
+                    {(searchResponse.busUser.displayName || '?').charAt(0).toUpperCase()}
                   </Text>
                 </View>
                 <View style={styles.resultBody}>
-                  <Text style={styles.resultName}>{searchResponse.busUser.displayName || `…${searchResponse.busUser.phoneHint}`}</Text>
-                  <Text style={styles.resultBadge}>From BUS app</Text>
+                  <Text style={styles.resultName}>
+                    {searchResponse.busUser.displayName || `…${searchResponse.busUser.phoneHint}`}
+                  </Text>
+                  <Text style={styles.resultSub}>{searchedPhone} · BUS user</Text>
+                </View>
+              </View>
+            )}
+
+            {searchResponse.inBusDatabase > 0 && !searchResponse.ownContact && !searchResponse.busUser && (
+              <View style={styles.resultRow}>
+                <View style={[styles.resultAvatar, styles.avatarOrange]}>
+                  <Text style={[styles.avatarText, styles.avatarTextOrange]}>DB</Text>
+                </View>
+                <View style={styles.resultBody}>
+                  <Text style={styles.resultName}>{searchedPhone}</Text>
+                  <Text style={styles.resultSub}>
+                    Saved by {searchResponse.inBusDatabase} BUS user{searchResponse.inBusDatabase !== 1 ? 's' : ''}
+                  </Text>
                 </View>
               </View>
             )}
@@ -200,29 +260,61 @@ export default function HomeScreen() {
                 <Text style={[styles.resultsHeader, { marginTop: Spacing.md }]}>
                   Shared in {searchResponse.comparisons.length} comparison{searchResponse.comparisons.length !== 1 ? 's' : ''}
                 </Text>
-                <FlatList
-                  data={searchResponse.comparisons}
-                  keyExtractor={r => r.comparisonId}
-                  scrollEnabled={false}
-                  renderItem={({ item }) => (
-                    <View style={styles.resultRow}>
-                      <View style={styles.resultAvatar}>
-                        <Text style={styles.resultAvatarText}>{item.otherUserName.charAt(0).toUpperCase()}</Text>
-                      </View>
-                      <View style={styles.resultBody}>
-                        <Text style={styles.resultName}>{item.otherUserName}</Text>
-                        <Text style={styles.resultDate}>{new Date(item.comparedAt).toLocaleDateString()}</Text>
-                      </View>
+                {searchResponse.comparisons.map(item => (
+                  <View key={item.comparisonId} style={styles.resultRow}>
+                    <View style={styles.resultAvatar}>
+                      <Text style={styles.avatarText}>{item.otherUserName.charAt(0).toUpperCase()}</Text>
                     </View>
-                  )}
-                />
+                    <View style={styles.resultBody}>
+                      <Text style={styles.resultName}>{item.otherUserName}</Text>
+                      <Text style={styles.resultSub}>{new Date(item.comparedAt).toLocaleDateString()}</Text>
+                    </View>
+                  </View>
+                ))}
               </>
             )}
           </View>
         )}
       </View>
 
-      {/* Contact sync card */}
+      {/* Recent calls */}
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle}>Recent Calls</Text>
+          <TouchableOpacity onPress={loadRecentCalls} disabled={callsLoading}>
+            {callsLoading
+              ? <ActivityIndicator size="small" color={Colors.primary} />
+              : <Text style={styles.refreshBtn}>Refresh</Text>}
+          </TouchableOpacity>
+        </View>
+
+        {recentCalls.length === 0 && !callsLoading && (
+          <Text style={styles.cardBody}>No recent calls found.</Text>
+        )}
+
+        {recentCalls.map((call, i) => {
+          const meta = CALL_ICON[call.type] ?? CALL_ICON.unknown;
+          return (
+            <TouchableOpacity key={i} style={styles.callRow} onPress={() => tapCallNumber(call.number)} activeOpacity={0.7}>
+              <View style={[styles.callTypeBox, { backgroundColor: meta.color + '20' }]}>
+                <Text style={[styles.callTypeIcon, { color: meta.color }]}>{meta.icon}</Text>
+              </View>
+              <View style={styles.resultBody}>
+                <Text style={styles.resultName} numberOfLines={1}>
+                  {call.cachedName || call.number}
+                </Text>
+                <Text style={styles.resultSub}>
+                  {call.cachedName ? call.number + ' · ' : ''}{relativeTime(call.date)}
+                  {call.type === 'incoming' && call.duration > 0 ? ` · ${Math.floor(call.duration / 60)}m${call.duration % 60}s` : ''}
+                </Text>
+              </View>
+              <Text style={styles.callSearchHint}>Search →</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Contact sync */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Contact Sync</Text>
         <Text style={styles.cardBody}>
@@ -233,14 +325,12 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Caller ID card */}
+      {/* Caller ID */}
       <View style={styles.card}>
         <View style={styles.callerIdHeader}>
           <View>
             <Text style={styles.cardTitle}>Incoming Caller ID</Text>
-            <Text style={styles.callerIdStatus}>
-              {callerIdEnabled ? '● Active' : '○ Not enabled'}
-            </Text>
+            <Text style={styles.callerIdStatus}>{callerIdEnabled ? '● Active' : '○ Not enabled'}</Text>
           </View>
           {callerIdEnabled && (
             <View style={styles.callerIdBadge}><Text style={styles.callerIdBadgeText}>ON</Text></View>
@@ -248,14 +338,12 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.cardBody}>
           {callerIdEnabled
-            ? 'BUS will show the caller\'s name from your contacts or the BUS network on incoming calls.'
-            : 'Let BUS identify incoming calls. When a caller is found in your contacts or BUS network, their name appears on the call screen.'}
+            ? "BUS will show the caller's name from your contacts or the BUS network on incoming calls."
+            : 'Let BUS identify incoming calls. When a caller is in your contacts or BUS network, their name appears on the call screen.'}
         </Text>
         {!callerIdEnabled && (
           <TouchableOpacity style={styles.button} onPress={handleEnableCallerId} disabled={callerIdLoading} activeOpacity={0.85}>
-            {callerIdLoading
-              ? <ActivityIndicator color={Colors.white} />
-              : <Text style={styles.buttonText}>Enable Caller ID</Text>}
+            {callerIdLoading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.buttonText}>Enable Caller ID</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -267,16 +355,12 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: Colors.background, padding: Spacing.xl },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    marginTop: Spacing.xl, marginBottom: Spacing.xl,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xl, marginBottom: Spacing.xl },
   greeting: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.textSecondary },
 
   searchCard: {
     backgroundColor: Colors.surface, borderRadius: Radii.card,
-    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.border,
-    marginBottom: Spacing.xl,
+    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.xl,
   },
   searchLabel: { fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.textSecondary, marginBottom: Spacing.md, textTransform: 'uppercase', letterSpacing: 0.8 },
   searchRow: { flexDirection: 'row', gap: Spacing.sm },
@@ -285,35 +369,41 @@ const styles = StyleSheet.create({
     borderRadius: Radii.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2,
     fontSize: FontSize.body, color: Colors.textPrimary, fontFamily: Fonts.regular,
   },
-  searchBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radii.md,
-    paddingHorizontal: Spacing.lg, justifyContent: 'center',
-  },
+  searchBtn: { backgroundColor: Colors.primary, borderRadius: Radii.md, paddingHorizontal: Spacing.lg, justifyContent: 'center' },
   searchBtnText: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.white },
+  noResults: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 20, marginTop: Spacing.md },
   resultsWrap: { marginTop: Spacing.lg },
-  resultsHeader: { fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.textSecondary, marginBottom: Spacing.md },
-  noResults: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 20 },
+  resultsHeader: { fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.textSecondary, marginBottom: Spacing.sm },
+
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
-  resultAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.primary + '25', justifyContent: 'center', alignItems: 'center' },
-  resultAvatarGreen: { backgroundColor: '#16a34a25' },
-  resultAvatarBlue: { backgroundColor: '#2563eb25' },
-  resultAvatarText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
-  resultAvatarTextGreen: { color: '#16a34a' },
-  resultAvatarTextBlue: { color: '#2563eb' },
+  resultAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary + '25', justifyContent: 'center', alignItems: 'center' },
+  avatarGreen: { backgroundColor: '#16a34a25' },
+  avatarBlue:  { backgroundColor: '#2563eb25' },
+  avatarOrange: { backgroundColor: '#ea580c25' },
+  avatarText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  avatarTextGreen:  { color: '#16a34a' },
+  avatarTextBlue:   { color: '#2563eb' },
+  avatarTextOrange: { color: '#ea580c', fontSize: 10 },
   resultBody: { flex: 1 },
   resultName: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.textPrimary },
-  resultDate: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary },
-  resultBadge: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary },
+  resultSub:  { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: Radii.card,
-    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.border,
-    marginBottom: Spacing.xl,
+    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.xl,
   },
-  cardTitle: { fontSize: FontSize.subheading, fontFamily: Fonts.semiBold, color: Colors.textPrimary, marginBottom: Spacing.sm },
-  cardBody: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 22, marginBottom: Spacing.xl },
+  cardTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+  cardTitle: { fontSize: FontSize.subheading, fontFamily: Fonts.semiBold, color: Colors.textPrimary },
+  cardBody:  { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 22, marginBottom: Spacing.xl },
+  refreshBtn: { fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.primary },
   button: { backgroundColor: Colors.primary, borderRadius: Radii.button, padding: Spacing.lg, alignItems: 'center' },
   buttonText: { fontSize: FontSize.body, fontFamily: Fonts.semiBold, color: Colors.white },
+
+  callRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
+  callTypeBox: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  callTypeIcon: { fontSize: 16, fontWeight: '700' },
+  callSearchHint: { fontSize: 11, color: Colors.textSecondary, fontFamily: Fonts.regular },
+
   callerIdHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   callerIdStatus: { fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: Spacing.sm },
   callerIdBadge: { backgroundColor: '#16a34a25', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },

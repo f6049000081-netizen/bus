@@ -92,13 +92,16 @@ contactsRouter.get('/search', async (req, res, next) => {
   try {
     const hash = z.string().length(64).parse(req.query.hash);
 
-    const [ownContact, busUser, mutualMatches] = await Promise.all([
+    const [ownContact, busUser, busDbCount, mutualMatches] = await Promise.all([
       prisma.contactHash.findUnique({
         where: { userId_contactHash: { userId: req.userId, contactHash: hash } },
       }),
       prisma.user.findUnique({
         where: { lookupHash: hash },
         select: { id: true, displayName: true, phoneHint: true },
+      }),
+      prisma.contactHash.count({
+        where: { contactHash: hash, userId: { not: req.userId } },
       }),
       prisma.mutualContact.findMany({
         where: {
@@ -139,6 +142,7 @@ contactsRouter.get('/search', async (req, res, next) => {
     res.json({
       ownContact: !!ownContact,
       busUser: busMatch,
+      inBusDatabase: busDbCount,
       comparisons,
     });
   } catch (err) { next(err); }

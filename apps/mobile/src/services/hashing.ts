@@ -9,8 +9,13 @@ const CONTACT_HASH_SALT = 'bus-contacts-v1';
 
 export function normalizePhone(raw: string, defaultCountry = 'ET'): string | null {
   try {
-    if (!isValidPhoneNumber(raw, defaultCountry as never)) return null;
-    return parsePhoneNumber(raw, defaultCountry as never).format('E.164');
+    // Explicit Ethiopian short-dial normalisation: 09xxxxxxxx → +2519xxxxxxxx
+    // libphonenumber-js may reject bare "09" numbers without country context.
+    let coerced = raw.trim().replace(/[\s\-().]/g, '');
+    if (/^09\d{8}$/.test(coerced)) coerced = '+251' + coerced.slice(1);
+
+    if (!isValidPhoneNumber(coerced, defaultCountry as never)) return null;
+    return parsePhoneNumber(coerced, defaultCountry as never).format('E.164');
   } catch {
     return null;
   }

@@ -18,11 +18,6 @@ import com.facebook.react.bridge.WritableMap;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Reads Android call log + SMS inbox to produce per-contact communication
- * frequency counts for the last 7, 30, and 90 days.
- * Exposed to JS as NativeModules.BusCallLog.
- */
 public class BusCallLogModule extends ReactContextBaseJavaModule {
 
     private final ReactApplicationContext reactContext;
@@ -43,11 +38,9 @@ public class BusCallLogModule extends ReactContextBaseJavaModule {
             long monthAgo  = now - 30L * 86_400_000L;
             long ninetyAgo = now - 90L * 86_400_000L;
 
-            // number -> [weekCount, monthCount, totalCount]
             Map<String, int[]> counts = new HashMap<>();
             ContentResolver cr = reactContext.getContentResolver();
 
-            // ── Call log ─────────────────────────────────────────────────
             if (reactContext.checkSelfPermission(
                     Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
                 try (Cursor c = cr.query(
@@ -72,7 +65,6 @@ public class BusCallLogModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // ── SMS (sent + received) ─────────────────────────────────────
             boolean hasSms = reactContext.checkSelfPermission(
                     Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
             if (hasSms) {
@@ -101,15 +93,84 @@ public class BusCallLogModule extends ReactContextBaseJavaModule {
                 }
             }
 
-            // ── Build JS result ───────────────────────────────────────────
             WritableArray result = Arguments.createArray();
             for (Map.Entry<String, int[]> e : counts.entrySet()) {
                 WritableMap item = Arguments.createMap();
-                item.putString("number",      e.getKey());
+                item.putString("number",     e.getKey());
                 item.putInt("weekCount",  e.getValue()[0]);
                 item.putInt("monthCount", e.getValue()[1]);
                 item.putInt("totalCount", e.getValue()[2]);
                 result.pushMap(item);
+            }
+            promise.resolve(result);
+
+        } catch (Exception e) {
+            promise.reject("ERR_CALL_LOG", e.getMessage(), e);
+        }
+    }
+
+    /** Returns the most recent `limit` calls (answered, outgoing, missed). */
+    @ReactMethod
+    public void getRecentCalls(int limit, Promise promise) {
+        try {
+            if (reactContext.checkSelfPermission(
+                    Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
+                promise.reject("PERMISSION_DENIED", "READ_CALL_LOG permission not granted");
+                return;
+            }
+
+            ContentResolver cr = reactContext.getContentResolver();
+            WritableArray result = Arguments.createArray();
+            int count = 0;
+
+            String[] cols = {
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.DATE,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.CACHED_NAME,
+            };
+
+            try (Cursor c = cr.query(
+                    CallLog.Calls.CONTENT_URI,
+                    cols,
+                    null, null,
+                    CallLog.Calls.DATE + " DESC")) {
+
+                if (c != null) {
+                    int iNum  = c.getColumnIndexOrThrow(CallLog.Calls.NUMBER);
+                    int iDate = c.getColumnIndexOrThrow(CallLog.Calls.DATE);
+                    int iType = c.getColumnIndexOrThrow(CallLog.Calls.TYPE);
+                    int iDur  = c.getColumnIndexOrThrow(CallLog.Calls.DURATION);
+                    int iName = c.getColumnIndex(CallLog.Calls.CACHED_NAME);
+
+                    while (c.moveToNext() && count < limit) {
+                        String num = c.getString(iNum);
+                        if (num == null || num.isEmpty()) continue;
+
+                        int typeInt = c.getInt(iType);
+                        String typeStr;
+                        switch (typeInt) {
+                            case CallLog.Calls.INCOMING_TYPE:  typeStr = "incoming";  break;
+                            case CallLog.Calls.OUTGOING_TYPE:  typeStr = "outgoing";  break;
+                            case CallLog.Calls.MISSED_TYPE:    typeStr = "missed";    break;
+                            case CallLog.Calls.REJECTED_TYPE:  typeStr = "rejected";  break;
+                            default:                           typeStr = "unknown";   break;
+                        }
+
+                        WritableMap item = Arguments.createMap();
+                        item.putString("number",   num);
+                        item.putDouble("date",     (double) c.getLong(iDate));
+                        item.putString("type",     typeStr);
+                        item.putInt("duration",    c.getInt(iDur));
+                        if (iName >= 0) {
+                            String name = c.getString(iName);
+                            if (name != null && !name.isEmpty()) item.putString("cachedName", name);
+                        }
+                        result.pushMap(item);
+                        count++;
+                    }
+                }
             }
             promise.resolve(result);
 
