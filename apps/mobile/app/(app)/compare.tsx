@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Share, PermissionsAndroid, Platform } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { Camera, CameraView } from 'expo-camera';
+import { CameraView } from 'expo-camera';
 import Toast from 'react-native-toast-message';
 import { router } from 'expo-router';
 import { getApiClient, ComparisonSession } from '@bus/shared';
@@ -41,10 +41,23 @@ export default function CompareScreen() {
     if (mode !== 'scan') return;
     setScanned(false);
     (async () => {
-      const { status } = await Camera.getCameraPermissionsAsync();
-      if (status === 'granted') { setCameraGranted(true); return; }
-      const { status: requested } = await Camera.requestCameraPermissionsAsync();
-      setCameraGranted(requested === 'granted');
+      try {
+        if (Platform.OS === 'android') {
+          const result = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+            { title: 'Camera Access', message: 'Between Us needs camera access to scan QR codes.', buttonPositive: 'Allow', buttonNegative: 'Deny' }
+          );
+          setCameraGranted(result === PermissionsAndroid.RESULTS.GRANTED);
+        } else {
+          const { getCameraPermissionsAsync, requestCameraPermissionsAsync } = await import('expo-camera');
+          const { status } = await getCameraPermissionsAsync();
+          if (status === 'granted') { setCameraGranted(true); return; }
+          const { status: req } = await requestCameraPermissionsAsync();
+          setCameraGranted(req === 'granted');
+        }
+      } catch {
+        setCameraGranted(false);
+      }
     })();
   }, [mode]);
 

@@ -4,6 +4,7 @@
  * Raw numbers and contact names never leave this module.
  */
 import * as Contacts from 'expo-contacts/legacy';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { hashContactPhone, normalizePhone } from './hashing';
 import { buildFrequencyMap, FrequencyBucket } from './frequency';
 import { getExcludedContactIds } from './exclusions';
@@ -19,7 +20,42 @@ export interface HashedContact {
   contactId?: string;
 }
 
+/** Direct lookup by phone number — only used when contactsMap hasn't been built yet. */
+export async function findContactByPhone(
+  rawNumber: string,
+  defaultCountry = 'ET'
+): Promise<string | null> {
+  try {
+    const normalized = normalizePhone(rawNumber, defaultCountry);
+    if (!normalized) return null;
+    const { data } = await Contacts.getContactsAsync({
+      fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
+    });
+    for (const contact of data) {
+      for (const ph of contact.phoneNumbers ?? []) {
+        if (!ph.number) continue;
+        if (normalizePhone(ph.number, defaultCountry) === normalized) {
+          return contact.name ?? null;
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export async function requestContactsPermission(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
+      {
+        title: 'Contacts Access',
+        message: 'Between Us needs your contacts to find mutual connections.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Deny',
+      }
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  }
   const { status } = await Contacts.requestPermissionsAsync();
   return status === 'granted';
 }

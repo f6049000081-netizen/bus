@@ -7,7 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
 import { getApiClient } from '@bus/shared';
 import { useAuthStore } from '../../src/stores/authStore';
-import { requestContactsPermission, hashAllContacts } from '../../src/services/contacts';
+import { requestContactsPermission, hashAllContacts, findContactByPhone } from '../../src/services/contacts';
 import { syncContacts } from '../../src/services/contactSync';
 import { hashContactPhone } from '../../src/services/hashing';
 import {
@@ -182,17 +182,25 @@ export default function HomeScreen() {
         setSearchError('Enter a valid number, e.g. +2519xxxxxxxx or 09xxxxxxxx');
         return;
       }
-      // O(1) lookup from pre-built map — no re-hashing of all contacts
-      setSearchedName(contactsMap.get(hash) ?? '');
+
+      // Step 1: check device contacts — map (O(1)) then direct fallback if map not yet built
+      let localName = contactsMap.get(hash) ?? '';
+      if (!localName && contactsMap.size === 0) {
+        localName = (await findContactByPhone(trimmed)) ?? '';
+      }
+      setSearchedName(localName);
+
+      // Step 2: query BUS database
       const { data } = await getApiClient().get<SearchResponse>(`/api/contacts/search?hash=${hash}`);
       setSearchResponse(data);
+
       const hasAny =
+        localName ||
         data.ownContact ||
         data.busUser ||
-        data.inBusDatabase > 0 ||
         (data.savedByUsers?.length ?? 0) > 0 ||
         data.comparisons.length > 0;
-      if (!hasAny) setSearchError(`"${trimmed}" was not found in BUS`);
+      if (!hasAny) setSearchError(`"${trimmed}" was not found in your contacts or BUS`);
     } catch {
       setSearchError('Search failed. Try again.');
     } finally {
@@ -246,11 +254,10 @@ export default function HomeScreen() {
 
         {searchResponse !== null && (
           <View style={styles.resultsWrap}>
-            <Text style={styles.resultsHeader}>
-              {searchedPhone}{searchedName ? ` · ${searchedName}` : ''}
-            </Text>
 
-            {searchResponse.ownContact && (
+            {/* ── Your phone contacts ── */}
+            <Text style={styles.sectionLabel}>Your contacts</Text>
+            {(searchedName || searchResponse.ownContact) ? (
               <View style={styles.resultRow}>
                 <View style={[styles.resultAvatar, styles.avatarGreen]}>
                   <Text style={[styles.avatarText, styles.avatarTextGreen]}>
@@ -259,9 +266,18 @@ export default function HomeScreen() {
                 </View>
                 <View style={styles.resultBody}>
                   <Text style={styles.resultName}>{searchedName || searchedPhone}</Text>
-                  <Text style={styles.resultSub}>{searchedPhone} · Your contact</Text>
+                  <Text style={styles.resultSub}>{searchedPhone} · Saved on your phone</Text>
                 </View>
               </View>
+            ) : (
+              <Text style={styles.notFoundNote}>Not in your contacts</Text>
+            )}
+
+            {/* ── BUS database ── */}
+            <Text style={[styles.sectionLabel, { marginTop: Spacing.lg }]}>BUS database</Text>
+
+            {!searchResponse.busUser && (searchResponse.savedByUsers?.length ?? 0) === 0 && searchResponse.comparisons.length === 0 && (
+              <Text style={styles.notFoundNote}>Not found in BUS</Text>
             )}
 
             {searchResponse.busUser && (
@@ -277,13 +293,16 @@ export default function HomeScreen() {
                   </Text>
                   <Text style={styles.resultSub}>{searchedPhone} · BUS user</Text>
                 </View>
+                <View style={styles.busBadgePill}>
+                  <Text style={styles.busBadgePillText}>BUS</Text>
+                </View>
               </View>
             )}
 
             {(searchResponse.savedByUsers?.length ?? 0) > 0 && (
               <>
-                <Text style={[styles.resultsHeader, { marginTop: Spacing.md }]}>
-                  In contacts of {searchResponse.savedByUsers.length} BUS user{searchResponse.savedByUsers.length !== 1 ? 's' : ''}
+                <Text style={styles.subLabel}>
+                  Saved by {searchResponse.savedByUsers.length} BUS user{searchResponse.savedByUsers.length !== 1 ? 's' : ''}
                 </Text>
                 {searchResponse.savedByUsers.map((u, i) => (
                   <View key={i} style={styles.resultRow}>
@@ -293,8 +312,8 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                     <View style={styles.resultBody}>
-                      <Text style={styles.resultName}>{u.displayName}</Text>
-                      <Text style={styles.resultSub}>Has {searchedPhone} saved</Text>
+                      <Text style={styles.resultName}>{u.displayName || `…${u.phoneHint}`}</Text>
+                      <Text style={styles.resultSub}>Has {searchedPhone} in their contacts</Text>
                     </View>
                     <View style={styles.busBadgePill}>
                       <Text style={styles.busBadgePillText}>BUS</Text>
@@ -306,8 +325,8 @@ export default function HomeScreen() {
 
             {searchResponse.comparisons.length > 0 && (
               <>
-                <Text style={[styles.resultsHeader, { marginTop: Spacing.md }]}>
-                  Shared in {searchResponse.comparisons.length} comparison{searchResponse.comparisons.length !== 1 ? 's' : ''}
+                <Text style={styles.subLabel}>
+                  Appeared in {searchResponse.comparisons.length} comparison{searchResponse.comparisons.length !== 1 ? 's' : ''}
                 </Text>
                 {searchResponse.comparisons.map(item => (
                   <View key={item.comparisonId} style={styles.resultRow}>
@@ -322,6 +341,7 @@ export default function HomeScreen() {
                 ))}
               </>
             )}
+
           </View>
         )}
       </View>
@@ -458,6 +478,19 @@ const styles = StyleSheet.create({
   noResults: { fontSize: FontSize.body, fontFamily: Fonts.regular, color: Colors.textSecondary, lineHeight: 20, marginTop: Spacing.md },
   resultsWrap: { marginTop: Spacing.lg },
   resultsHeader: { fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.textSecondary, marginBottom: Spacing.sm },
+  sectionLabel: {
+    fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.textSecondary,
+    textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 4,
+  },
+  subLabel: {
+    fontSize: FontSize.small, fontFamily: Fonts.semiBold, color: Colors.textSecondary,
+    marginTop: Spacing.sm, marginBottom: Spacing.xs,
+  },
+  notFoundNote: {
+    fontSize: FontSize.small, fontFamily: Fonts.regular, color: Colors.textSecondary,
+    fontStyle: 'italic', marginBottom: Spacing.sm,
+  },
 
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
   resultAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary + '25', justifyContent: 'center', alignItems: 'center' },

@@ -100,11 +100,11 @@ contactsRouter.get('/search', async (req, res, next) => {
         where: { lookupHash: hash },
         select: { id: true, displayName: true, phoneHint: true },
       }),
-      // BUS users who have this number saved as a contact
+      // BUS users who have this number saved as a contact (no cap — return all)
       prisma.contactHash.findMany({
         where: { contactHash: hash, userId: { not: req.userId } },
         include: { user: { select: { id: true, displayName: true, phoneHint: true } } },
-        take: 10,
+        orderBy: { createdAt: 'asc' },
       }),
       prisma.mutualContact.findMany({
         where: {
