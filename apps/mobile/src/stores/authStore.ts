@@ -13,6 +13,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   setSession: (data: AuthResponse) => Promise<void>;
+  updateUser: (partial: Partial<User>) => void;
   refreshToken: () => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
@@ -24,6 +25,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   salt: null,
   isAuthenticated: false,
   isLoading: true,
+
+  updateUser: (partial) => {
+    set((state) => ({ user: state.user ? { ...state.user, ...partial } : null }));
+  },
 
   setSession: async (data) => {
     await SecureStore.setItemAsync(REFRESH_KEY, data.refreshToken);

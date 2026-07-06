@@ -48,6 +48,7 @@ model ContactHash {
 
   @@unique([userId, contactHash])
   @@index([userId])
+  @@index([contactHash])
 }
 
 model ComparisonSession {

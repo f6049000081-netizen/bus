@@ -76,6 +76,8 @@ export default function HomeScreen() {
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [callsLoading, setCallsLoading] = useState(false);
   const [busNames, setBusNames] = useState<Map<string, BusLookupResult>>(new Map());
+  // hash → local contact name: built once during sync, used for instant search lookup
+  const [contactsMap, setContactsMap] = useState<Map<string, string>>(new Map());
 
   const loadRecentCalls = useCallback(async () => {
     setCallsLoading(true);
@@ -104,6 +106,10 @@ export default function HomeScreen() {
       await SecureStore.setItemAsync(CONTACT_HASH_VERSION_KEY, CURRENT_VERSION);
       setSyncNote(`${contacts.length} contacts · ${upserted} updated · ${removed} removed`);
       updateCallerIdCache(contacts).catch(() => {});
+      // Build hash→name map for instant search lookups (avoids re-hashing all contacts on every search)
+      const map = new Map<string, string>();
+      for (const c of contacts) { if (c.localName) map.set(c.hash, c.localName); }
+      setContactsMap(map);
       if (!silent) Toast.show({ type: 'success', text1: 'Contacts synced', text2: `${upserted} updated, ${removed} removed` });
     } catch (err: unknown) {
       if (!silent) {
@@ -131,8 +137,8 @@ export default function HomeScreen() {
 
     loadRecentCalls();
 
-    // Refresh call list every 5 seconds
-    const interval = setInterval(loadRecentCalls, 5000);
+    // Refresh call list every 30 seconds
+    const interval = setInterval(loadRecentCalls, 30_000);
 
     // Refresh when app comes back to foreground
     const appStateSub = AppState.addEventListener('change', (state) => {
@@ -176,9 +182,8 @@ export default function HomeScreen() {
         setSearchError('Enter a valid number, e.g. +2519xxxxxxxx or 09xxxxxxxx');
         return;
       }
-      const contacts = await hashAllContacts('');
-      const match = contacts.find(c => c.hash === hash);
-      setSearchedName(match?.localName ?? '');
+      // O(1) lookup from pre-built map — no re-hashing of all contacts
+      setSearchedName(contactsMap.get(hash) ?? '');
       const { data } = await getApiClient().get<SearchResponse>(`/api/contacts/search?hash=${hash}`);
       setSearchResponse(data);
       const hasAny =
