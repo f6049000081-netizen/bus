@@ -30,12 +30,11 @@ export default function RootLayout() {
     registerForPushNotifications().catch(() => {});
   }, []);
 
-  const appReady = !isLoading && introShown;
-
   return (
     <QueryClientProvider client={queryClient}>
       <StatusBar style="light" />
-      {appReady && <Stack screenOptions={{ headerShown: false }} />}
+      {/* Render the app as soon as auth resolves; intro plays as an overlay on top */}
+      {!isLoading && <Stack screenOptions={{ headerShown: false }} />}
       <Toast />
       {!introShown && <IntroAnimation onDone={() => setIntroShown(true)} />}
     </QueryClientProvider>

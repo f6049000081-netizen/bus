@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  ScrollView, TextInput, AppState, Keyboard,
+  ScrollView, TextInput, AppState, Linking, Keyboard,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import Toast from 'react-native-toast-message';
@@ -62,6 +62,7 @@ export default function HomeScreen() {
   const { user } = useAuthStore();
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState('');
+  const [contactsPermDenied, setContactsPermDenied] = useState(false);
 
   const [callerIdEnabled, setCallerIdEnabled] = useState(false);
   const [callerIdLoading, setCallerIdLoading] = useState(false);
@@ -93,12 +94,14 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const doSync = async (silent = false) => {
+  const doSync = useCallback(async (silent = false) => {
     const granted = await requestContactsPermission();
     if (!granted) {
-      if (!silent) Toast.show({ type: 'error', text1: 'Permission denied', text2: 'Between Us needs contact access.' });
+      setContactsPermDenied(true);
+      if (!silent) Toast.show({ type: 'error', text1: 'Permission denied', text2: 'Enable contacts access in Settings.' });
       return;
     }
+    setContactsPermDenied(false);
     setSyncing(true);
     try {
       const contacts = await hashAllContacts('');
@@ -106,20 +109,17 @@ export default function HomeScreen() {
       await SecureStore.setItemAsync(CONTACT_HASH_VERSION_KEY, CURRENT_VERSION);
       setSyncNote(`${contacts.length} contacts · ${upserted} updated · ${removed} removed`);
       updateCallerIdCache(contacts).catch(() => {});
-      // Build hash→name map for instant search lookups (avoids re-hashing all contacts on every search)
       const map = new Map<string, string>();
       for (const c of contacts) { if (c.localName) map.set(c.hash, c.localName); }
       setContactsMap(map);
       if (!silent) Toast.show({ type: 'success', text1: 'Contacts synced', text2: `${upserted} updated, ${removed} removed` });
     } catch (err: unknown) {
-      if (!silent) {
-        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed';
-        Toast.show({ type: 'error', text1: 'Sync failed', text2: msg });
-      }
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed';
+      Toast.show({ type: 'error', text1: 'Sync failed', text2: msg });
     } finally {
       setSyncing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     doSync(true); // always silently sync on startup
@@ -149,7 +149,7 @@ export default function HomeScreen() {
       clearInterval(interval);
       appStateSub.remove();
     };
-  }, [loadRecentCalls]);
+  }, [loadRecentCalls, doSync]);
 
   const handleEnableCallerId = async () => {
     setCallerIdLoading(true);
@@ -388,12 +388,25 @@ export default function HomeScreen() {
       {/* Contact sync */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Contact Sync</Text>
-        <Text style={styles.cardBody}>
-          {syncNote || 'Contacts are hashed on-device. Raw numbers never leave your phone.'}
-        </Text>
-        <TouchableOpacity style={styles.button} onPress={() => doSync(false)} disabled={syncing} activeOpacity={0.85}>
-          {syncing ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.buttonText}>Sync Contacts</Text>}
-        </TouchableOpacity>
+        {contactsPermDenied ? (
+          <>
+            <Text style={[styles.cardBody, { color: Colors.warning }]}>
+              Contacts permission is required. Please enable it in your phone settings.
+            </Text>
+            <TouchableOpacity style={styles.button} onPress={() => Linking.openSettings()} activeOpacity={0.85}>
+              <Text style={styles.buttonText}>Open Settings</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.cardBody}>
+              {syncNote || 'Contacts are hashed on-device. Raw numbers never leave your phone.'}
+            </Text>
+            <TouchableOpacity style={styles.button} onPress={() => doSync(false)} disabled={syncing} activeOpacity={0.85}>
+              {syncing ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.buttonText}>Sync Contacts</Text>}
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Caller ID */}

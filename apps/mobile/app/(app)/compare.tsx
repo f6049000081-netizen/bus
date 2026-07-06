@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Share } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, CameraView } from 'expo-camera';
 import Toast from 'react-native-toast-message';
 import { router } from 'expo-router';
 import { getApiClient, ComparisonSession } from '@bus/shared';
@@ -27,7 +27,7 @@ export default function CompareScreen() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // — Scan mode state —
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraGranted, setCameraGranted] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
 
   const stopPolling = () => {
@@ -36,9 +36,16 @@ export default function CompareScreen() {
 
   useEffect(() => () => stopPolling(), []);
 
-  // Reset scan state when switching to scan mode
+  // Check / request camera permission whenever scan mode is opened
   useEffect(() => {
-    if (mode === 'scan') setScanned(false);
+    if (mode !== 'scan') return;
+    setScanned(false);
+    (async () => {
+      const { status } = await Camera.getCameraPermissionsAsync();
+      if (status === 'granted') { setCameraGranted(true); return; }
+      const { status: requested } = await Camera.requestCameraPermissionsAsync();
+      setCameraGranted(requested === 'granted');
+    })();
   }, [mode]);
 
   const startPolling = (sessionId: string) => {
@@ -155,12 +162,14 @@ export default function CompareScreen() {
         // ── Scan mode ──
         <View style={styles.content}>
           <Text style={styles.sub}>Point your camera at someone's Between Us QR code to start the comparison.</Text>
-          {!cameraPermission?.granted ? (
+          {cameraGranted === null ? (
             <View style={styles.permCard}>
-              <Text style={styles.permText}>Camera access is needed to scan QR codes.</Text>
-              <TouchableOpacity style={styles.button} onPress={requestCameraPermission} activeOpacity={0.85}>
-                <Text style={styles.buttonText}>Allow Camera</Text>
-              </TouchableOpacity>
+              <ActivityIndicator color={Colors.primary} />
+              <Text style={[styles.permText, { marginTop: Spacing.md }]}>Checking camera permission…</Text>
+            </View>
+          ) : !cameraGranted ? (
+            <View style={styles.permCard}>
+              <Text style={styles.permText}>Camera access is needed to scan QR codes. Please grant the permission in Settings → Apps → Between Us → Permissions.</Text>
             </View>
           ) : (
             <View style={styles.cameraWrapper}>
