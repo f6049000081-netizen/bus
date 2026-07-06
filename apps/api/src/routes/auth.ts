@@ -45,10 +45,16 @@ authRouter.post('/verify-otp', otpLimiter, async (req, res, next) => {
       const salt = generateSalt();
       const phoneHash = hashPhone(salt, phone);
       user = await prisma.user.create({
-        data: { id: uuid(), phoneHash, lookupHash: lookup, phoneHint, displayName: displayName ?? '', salt },
+        data: { id: uuid(), phoneHash, lookupHash: lookup, phoneHint, displayName: displayName?.trim() ?? '', salt },
       });
-    } else if (!user.lookupHash) {
-      user = await prisma.user.update({ where: { id: user.id }, data: { lookupHash: lookup } });
+    } else {
+      // Keep existing displayName unless it's empty (old account created before name feature)
+      const updates: Record<string, string> = {};
+      if (!user.lookupHash) updates.lookupHash = lookup;
+      if (!user.displayName && displayName?.trim()) updates.displayName = displayName.trim();
+      if (Object.keys(updates).length > 0) {
+        user = await prisma.user.update({ where: { id: user.id }, data: updates });
+      }
     }
 
     const accessToken = jwt.sign({ sub: user.id }, process.env.JWT_ACCESS_SECRET!, { expiresIn: '15m' });

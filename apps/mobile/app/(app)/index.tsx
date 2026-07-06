@@ -326,6 +326,9 @@ export default function HomeScreen() {
         )}
       </View>
 
+      {/* Section separator */}
+      <View style={styles.sectionSep} />
+
       {/* Recent calls */}
       <View style={styles.card}>
         <View style={styles.cardTitleRow}>
@@ -483,6 +486,13 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.semiBold,
     color: Colors.primaryLight,
     letterSpacing: 0.5,
+  },
+
+  sectionSep: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginBottom: Spacing.xl,
+    opacity: 0.6,
   },
 
   callerIdHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },

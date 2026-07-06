@@ -127,15 +127,26 @@ contactsRouter.get('/search', async (req, res, next) => {
       }),
     ]);
 
-    const comparisons = mutualMatches.map((mc) => {
-      const isA = mc.comparison.userAId === req.userId;
-      const other = isA ? mc.comparison.userB : mc.comparison.userA;
-      return {
-        comparisonId: mc.comparisonId,
-        comparedAt: mc.comparison.createdAt,
-        otherUserName: other.displayName || `…${other.phoneHint}`,
-      };
-    });
+    // Deduplicate comparisons by the other user — keep only the most recent per person
+    const seenUsers = new Set<string>();
+    const comparisons = mutualMatches
+      .map((mc) => {
+        const isA = mc.comparison.userAId === req.userId;
+        const otherUserId = isA ? mc.comparison.userBId : mc.comparison.userAId;
+        const other = isA ? mc.comparison.userB : mc.comparison.userA;
+        return {
+          comparisonId: mc.comparisonId,
+          comparedAt: mc.comparison.createdAt,
+          otherUserName: other.displayName || `…${other.phoneHint}`,
+          otherUserId,
+        };
+      })
+      .filter(({ otherUserId }) => {
+        if (seenUsers.has(otherUserId)) return false;
+        seenUsers.add(otherUserId);
+        return true;
+      })
+      .map(({ otherUserId: _uid, ...rest }) => rest);
 
     const busMatch = busUser && busUser.id !== req.userId
       ? { displayName: busUser.displayName || `…${busUser.phoneHint}`, phoneHint: busUser.phoneHint }
