@@ -14,12 +14,15 @@
       "android": { "buildType": "apk" },
       "ios": { "simulator": false },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-production-8cea.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://bus-api-vwcte.ondigitalocean.app"
       }
     },
     "production": {
       "autoIncrement": true,
-      "android": { "buildType": "app-bundle" }
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://bus-api-vwcte.ondigitalocean.app"
+      }
     }
   },
   "submit": {
