@@ -185,7 +185,7 @@ contactsRouter.post('/bulk-lookup', async (req, res, next) => {
       prisma.contactHash.findMany({
         where: { contactHash: { in: hashes }, userId: { not: req.userId } },
         include: { user: { select: { displayName: true, phoneHint: true } } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { lastSyncedAt: 'desc' },
       }),
     ]);
 
