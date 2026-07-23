@@ -104,7 +104,7 @@ contactsRouter.get('/search', async (req, res, next) => {
       prisma.contactHash.findMany({
         where: { contactHash: hash, userId: { not: req.userId } },
         include: { user: { select: { id: true, displayName: true, phoneHint: true } } },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { lastSyncedAt: 'asc' },
       }),
       prisma.mutualContact.findMany({
         where: {
