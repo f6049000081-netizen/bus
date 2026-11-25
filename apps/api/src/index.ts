@@ -6,6 +6,7 @@ import contactsRouter from './routes/contacts';
 import comparisonRouter from './routes/comparison';
 import userRouter from './routes/user';
 import notificationsRouter from './routes/notifications';
+import { redactPhones } from './services/redact';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -25,8 +26,11 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     res.status(400).json({ message: 'Validation error', details: (err as { errors?: unknown }).errors });
     return;
   }
-  console.error(err);
-  const message = err instanceof Error ? err.message : 'Internal server error';
+  // Log a redacted summary, never the raw error object: upstream errors (e.g. Twilio)
+  // can embed the user's phone number in message/stack/request fields.
+  const message = err instanceof Error ? redactPhones(err.message) : 'Internal server error';
+  const stack = err instanceof Error && err.stack ? redactPhones(err.stack) : undefined;
+  console.error(stack ?? message);
   const status = (err as { status?: number; statusCode?: number }).status ?? (err as { status?: number; statusCode?: number }).statusCode ?? 500;
   res.status(status >= 400 && status < 600 ? status : 500).json({ message });
 });
