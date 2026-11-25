@@ -33,8 +33,16 @@ interface SearchResponse {
   ownContact: boolean;
   busUser: { displayName: string; phoneHint: string } | null;
   inBusDatabase: number;
-  savedByUsers: Array<{ displayName: string; phoneHint: string }>;
+  savedByUsers: SavedByUser[];
+  savedByMyContactsCount?: number;
   comparisons: ComparisonResult[];
+}
+
+interface SavedByUser {
+  displayName: string;
+  phoneHint: string;
+  inMyContacts?: boolean;
+  lookupHash?: string; // only present when inMyContacts
 }
 
 function relativeTime(ms: number): string {
@@ -299,29 +307,54 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {(searchResponse.savedByUsers?.length ?? 0) > 0 && (
-              <>
-                <Text style={styles.subLabel}>
-                  Saved by {searchResponse.savedByUsers.length} BUS user{searchResponse.savedByUsers.length !== 1 ? 's' : ''}
-                </Text>
-                {searchResponse.savedByUsers.map((u, i) => (
-                  <View key={i} style={styles.resultRow}>
-                    <View style={[styles.resultAvatar, styles.avatarOrange]}>
-                      <Text style={[styles.avatarText, styles.avatarTextOrange]}>
-                        {(u.displayName || '?').charAt(0).toUpperCase()}
+            {(() => {
+              const all = searchResponse.savedByUsers ?? [];
+              const mine = all.filter((u) => u.inMyContacts);
+              const others = all.filter((u) => !u.inMyContacts);
+              const renderRow = (u: SavedByUser, i: number, isMine: boolean) => {
+                // Prefer the name from MY address book for people I know
+                const localName = isMine && u.lookupHash ? contactsMap.get(u.lookupHash) : undefined;
+                const name = localName || u.displayName || `…${u.phoneHint}`;
+                return (
+                  <View key={`${isMine ? 'm' : 'o'}${i}`} style={styles.resultRow}>
+                    <View style={[styles.resultAvatar, isMine ? styles.avatarGreen : styles.avatarOrange]}>
+                      <Text style={[styles.avatarText, isMine ? styles.avatarTextGreen : styles.avatarTextOrange]}>
+                        {name.charAt(0).toUpperCase()}
                       </Text>
                     </View>
                     <View style={styles.resultBody}>
-                      <Text style={styles.resultName}>{u.displayName || `…${u.phoneHint}`}</Text>
-                      <Text style={styles.resultSub}>Has {searchedPhone} in their contacts</Text>
+                      <Text style={styles.resultName}>{name}</Text>
+                      <Text style={styles.resultSub}>
+                        {isMine ? 'Your contact · ' : ''}Has {searchedPhone} saved
+                      </Text>
                     </View>
                     <View style={styles.busBadgePill}>
                       <Text style={styles.busBadgePillText}>BUS</Text>
                     </View>
                   </View>
-                ))}
-              </>
-            )}
+                );
+              };
+              return (
+                <>
+                  {all.length > 0 && (
+                    <Text style={styles.subLabel}>
+                      {mine.length > 0
+                        ? `${mine.length} of your contact${mine.length !== 1 ? 's' : ''} saved this number`
+                        : 'None of your contacts saved this number'}
+                    </Text>
+                  )}
+                  {mine.map((u, i) => renderRow(u, i, true))}
+                  {others.length > 0 && (
+                    <>
+                      <Text style={styles.subLabel}>
+                        Also saved by {others.length} other BUS user{others.length !== 1 ? 's' : ''}
+                      </Text>
+                      {others.map((u, i) => renderRow(u, i, false))}
+                    </>
+                  )}
+                </>
+              );
+            })()}
 
             {searchResponse.comparisons.length > 0 && (
               <>

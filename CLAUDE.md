@@ -105,5 +105,5 @@ EXPO_PUBLIC_API_URL=http://<LAN_IP>:3000
 - **Phase 2 (done)**: comparison session (QR/link), backend intersection, mutual contact UI
 - **Phase 3 (done)**: Android call-log frequency scoring, iOS fallback
 - **Phase 4 (mostly done)**: match history, warm intro finder, push notifications, privacy screen and contact exclusion are built. **Circles are not built.**
-- **Extras shipped**: phone-number search (own contacts, BUS users, who-saved-it, past matches), dialer with tap-to-call, incoming caller ID, intro animation
+- **Extras shipped**: phone-number search (own contacts, BUS users, who-saved-it split into "your contacts" vs other BUS users via `lookupHash` ∈ my `ContactHash`, past matches), dialer with tap-to-call, incoming caller ID, intro animation
 - **Phase 5 (not started)**: trust indicator, group comparison, polish

@@ -103,7 +103,7 @@ contactsRouter.get('/search', async (req, res, next) => {
       // BUS users who have this number saved as a contact (no cap — return all)
       prisma.contactHash.findMany({
         where: { contactHash: hash, userId: { not: req.userId } },
-        include: { user: { select: { id: true, displayName: true, phoneHint: true } } },
+        include: { user: { select: { id: true, displayName: true, phoneHint: true, lookupHash: true } } },
         orderBy: { lastSyncedAt: 'asc' },
       }),
       prisma.mutualContact.findMany({
@@ -153,18 +153,39 @@ contactsRouter.get('/search', async (req, res, next) => {
       : null;
 
     // Users who have this number in their contacts (excludes the number's owner if they're a BUS user)
-    const savedByUsers = savedByEntries
-      .filter((e) => e.userId !== busUser?.id)
-      .map((e) => ({
+    const savers = savedByEntries.filter((e) => e.userId !== busUser?.id);
+
+    // Which of those savers are in the searcher's OWN address book? A saver is "my contact"
+    // when their lookupHash (fixed-salt hash of their phone) is one of my contact hashes.
+    const saverLookupHashes = savers
+      .map((e) => e.user.lookupHash)
+      .filter((h): h is string => !!h);
+    const myContactHits = saverLookupHashes.length === 0 ? [] : await prisma.contactHash.findMany({
+      where: { userId: req.userId, contactHash: { in: saverLookupHashes } },
+      select: { contactHash: true },
+    });
+    const myContactSet = new Set(myContactHits.map((c) => c.contactHash));
+
+    const savedByUsers = savers.map((e) => {
+      const inMyContacts = !!e.user.lookupHash && myContactSet.has(e.user.lookupHash);
+      return {
         displayName: e.user.displayName || `…${e.user.phoneHint}`,
         phoneHint: e.user.phoneHint,
-      }));
+        inMyContacts,
+        // Only expose the hash for people already in my address book (I already know their
+        // number) so the app can show my local name for them. Never for strangers.
+        ...(inMyContacts ? { lookupHash: e.user.lookupHash } : {}),
+      };
+    });
+    // My contacts first
+    savedByUsers.sort((a, b) => Number(b.inMyContacts) - Number(a.inMyContacts));
 
     res.json({
       ownContact: !!ownContact,
       busUser: busMatch,
       inBusDatabase: savedByEntries.length,
       savedByUsers,
+      savedByMyContactsCount: savedByUsers.filter((u) => u.inMyContacts).length,
       comparisons,
     });
   } catch (err) { next(err); }
