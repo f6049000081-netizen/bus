@@ -55,7 +55,15 @@ The hashing pipeline:
 5. After matching, the app resolves contact names from the user's own local address book
 
 **Contact salt is a fixed app-level constant (`bus-contacts-v1`), not per-user.** Per-user salts made intersection impossible and were dropped. The server's `hashForLookup()` uses the same constant so `User.lookupHash` matches contact hashes, which is how BUS users are discovered. The per-user `User.salt` and `phoneHash` still exist but are only used for the user's own record.
-- Known risk: E.164 numbers are a small keyspace, so fixed-salt hashes can be brute-forced by anyone with DB access. Treat the `ContactHash` table as sensitive.
+
+**Hashes are encrypted at rest** (`services/hashCrypto.ts`). Fixed-salt hashes alone are brute-forceable (small phone keyspace), so the server never stores them as-is:
+- Inbound: `sealHash(clientHash)` (deterministic AES-256-CBC, zero IV, no padding, key = `CONTACT_ENC_KEY`) before any DB write or query
+- Outbound: `openHash(stored)` only when returning a hash to a client (comparison mutuals, search `lookupHash`, bulk-lookup keys)
+- Applies to `ContactHash.contactHash`, `User.lookupHash`, `MutualContact.contactHash`, `Comparison.mutualContactHashes`
+- Deterministic, so intersection, search and unique constraints work on ciphertext. Ciphertext is also 64-char hex.
+- A leaked DB without the key reveals nothing. A compromised running server (which has the key) is not protected.
+- Losing or rotating `CONTACT_ENC_KEY` makes all stored hashes unusable. Rotation needs a re-encrypt migration.
+- Startup refuses to run without the key, then runs `encryptExistingHashes()` once (advisory lock + `AppMeta` marker) to encrypt legacy plaintext rows.
 
 Logging rules:
 - Never `console.*` a phone number. Show the last 4 digits at most (same as `phoneHint`).
@@ -64,16 +72,17 @@ Logging rules:
 Any code that would upload raw contact numbers or contact names is a privacy violation.
 
 ## Data Model (`apps/api/prisma/schema.prisma`)
-- `User`: id, phoneHash (per-user salt), lookupHash (fixed salt, unique), phoneHint (last 4), displayName, salt
+- `User`: id, phoneHash (per-user salt), lookupHash (fixed salt, encrypted, unique), phoneHint (last 4), displayName, salt
 - `RefreshToken`: tokenHash (SHA-256), expiresAt
 - `ContactHash`: userId, contactHash, frequencyBucket, callCountWeek/Month/Total, excluded, lastSyncedAt. Unique on (userId, contactHash).
 - `ComparisonSession`: one-time token (10min TTL), usedAt
 - `Comparison`: sessionId, userAId, userBId, mutualCount, mutualContactHashes[]
 - `MutualContact`: per-comparison hash with each side's week/month/total call counts
 - `PushToken`: Expo push tokens per user
+- `AppMeta`: key/value markers for one-time data migrations
 
 ## Key Constraints
-- `ContactHash.contactHash` is always 64-char lowercase hex (SHA-256 output)
+- `ContactHash.contactHash` is always 64-char lowercase hex (encrypted SHA-256 output; never compare it to a raw client hash without `sealHash`)
 - `frequencyBucket`: 'frequent' | 'occasional' | 'rare' | 'unknown'
 - Raw call counts (`callCount*`, `MutualContact` counts) ARE stored server-side to power the Top 10 / This Week / This Month views. This differs from the original "buckets only" design.
 - All IDs use `uuid()`
@@ -94,6 +103,7 @@ TWILIO_ACCOUNT_SID=...
 TWILIO_AUTH_TOKEN=...
 TWILIO_VERIFY_SERVICE_SID=...
 DEV_OTP_BYPASS=false
+CONTACT_ENC_KEY=...            # 64 hex chars: openssl rand -hex 32. Never lose or commit it.
 PORT=3000
 
 # apps/mobile/.env

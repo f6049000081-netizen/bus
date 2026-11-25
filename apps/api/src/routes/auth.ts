@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import prisma from '../services/prisma';
 import { sendOtp, verifyOtp } from '../services/sms';
 import { generateSalt, hashPhone, hashForLookup } from '../services/psi';
+import { sealHash } from '../services/hashCrypto';
 
 const authRouter = Router();
 
@@ -38,7 +39,7 @@ authRouter.post('/verify-otp', otpLimiter, async (req, res, next) => {
     if (!approved) { res.status(401).json({ message: 'Invalid or expired OTP' }); return; }
 
     const phoneHint = phone.slice(-4);
-    const lookup = hashForLookup(phone);
+    const lookup = sealHash(hashForLookup(phone)); // stored encrypted
 
     let user = await prisma.user.findUnique({ where: { lookupHash: lookup } });
     if (!user) {

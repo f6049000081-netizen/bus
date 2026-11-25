@@ -3,6 +3,10 @@ import { v4 as uuid } from 'uuid';
 import prisma from '../services/prisma';
 import { requireAuth } from '../middleware/requireAuth';
 import { intersect } from '../services/psi';
+import { openHash } from '../services/hashCrypto';
+
+// Hashes in the DB are encrypted (services/hashCrypto.ts). Intersection works on the
+// encrypted form; openHash() converts back to the client's hash only in responses.
 
 const comparisonRouter = Router();
 comparisonRouter.use(requireAuth);
@@ -82,7 +86,7 @@ comparisonRouter.post('/join/:token', async (req, res, next) => {
       id: comparison.id,
       mutualCount: mutual.length,
       mutuals: mutual.map((hash) => ({
-        contactHash: hash,
+        contactHash: openHash(hash),
         yourFrequency: mapB[hash]?.frequencyBucket ?? 'unknown',
         theirFrequency: mapA[hash]?.frequencyBucket ?? 'unknown',
         yourWeekCount: mapB[hash]?.callCountWeek ?? 0,
@@ -141,7 +145,7 @@ comparisonRouter.get('/:id', async (req, res, next) => {
       id: comparison.id,
       mutualCount: comparison.mutualCount,
       mutuals: comparison.mutualContactHashes.map((hash) => ({
-        contactHash: hash,
+        contactHash: openHash(hash),
         yourFrequency: myMap[hash]?.frequencyBucket ?? 'unknown',
         theirFrequency: otherMap[hash]?.frequencyBucket ?? 'unknown',
         yourWeekCount: myMap[hash]?.callCountWeek ?? 0,

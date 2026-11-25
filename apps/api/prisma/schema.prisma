@@ -25,6 +25,13 @@ model User {
   pushTokens     PushToken[]
 }
 
+// Small key/value store for one-time data-migration markers
+model AppMeta {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+}
+
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String

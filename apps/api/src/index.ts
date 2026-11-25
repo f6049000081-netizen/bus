@@ -7,6 +7,8 @@ import comparisonRouter from './routes/comparison';
 import userRouter from './routes/user';
 import notificationsRouter from './routes/notifications';
 import { redactPhones } from './services/redact';
+import { assertHashKeyConfigured } from './services/hashCrypto';
+import { encryptExistingHashes } from './services/encryptHashesMigration';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -36,4 +38,15 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 });
 
 const PORT = process.env.PORT ?? 3000;
-app.listen(PORT, () => console.log(`BUS API running on http://localhost:${PORT}`));
+async function start() {
+  // Refuse to start without the hash-encryption key, then encrypt any legacy plaintext
+  // hashes (one-time, idempotent) before serving traffic.
+  assertHashKeyConfigured();
+  await encryptExistingHashes();
+  app.listen(PORT, () => console.log(`BUS API running on http://localhost:${PORT}`));
+}
+
+start().catch((err) => {
+  console.error('[startup] Failed:', err instanceof Error ? redactPhones(err.message) : err);
+  process.exit(1);
+});

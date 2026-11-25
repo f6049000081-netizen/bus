@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
 import prisma from '../services/prisma';
 import { requireAuth } from '../middleware/requireAuth';
+import { sealHash, openHash } from '../services/hashCrypto';
+
+// All hashes are encrypted (sealHash) before touching the DB and decrypted (openHash)
+// only when returned to the client. See services/hashCrypto.ts.
 
 const contactsRouter = Router();
 contactsRouter.use(requireAuth);
@@ -38,7 +42,7 @@ contactsRouter.post('/sync', async (req, res, next) => {
         data: hashes.map((h) => ({
           id: uuid(),
           userId: req.userId,
-          contactHash: h.hash,
+          contactHash: sealHash(h.hash),
           frequencyBucket: h.frequencyBucket,
           callCountWeek: h.weekCount,
           callCountMonth: h.monthCount,
@@ -58,11 +62,11 @@ contactsRouter.patch('/sync', async (req, res, next) => {
 
     await prisma.$transaction([
       ...(remove.length > 0
-        ? [prisma.contactHash.deleteMany({ where: { userId: req.userId, contactHash: { in: remove } } })]
+        ? [prisma.contactHash.deleteMany({ where: { userId: req.userId, contactHash: { in: remove.map(sealHash) } } })]
         : []),
       ...upsert.map((h) =>
         prisma.contactHash.upsert({
-          where: { userId_contactHash: { userId: req.userId, contactHash: h.hash } },
+          where: { userId_contactHash: { userId: req.userId, contactHash: sealHash(h.hash) } },
           update: {
             frequencyBucket: h.frequencyBucket,
             callCountWeek: h.weekCount,
@@ -73,7 +77,7 @@ contactsRouter.patch('/sync', async (req, res, next) => {
           create: {
             id: uuid(),
             userId: req.userId,
-            contactHash: h.hash,
+            contactHash: sealHash(h.hash),
             frequencyBucket: h.frequencyBucket,
             callCountWeek: h.weekCount,
             callCountMonth: h.monthCount,
@@ -90,7 +94,7 @@ contactsRouter.patch('/sync', async (req, res, next) => {
 // Search by contact hash: own contacts, BUS users, who-saved-it, and past comparison matches
 contactsRouter.get('/search', async (req, res, next) => {
   try {
-    const hash = z.string().length(64).parse(req.query.hash);
+    const hash = sealHash(z.string().regex(/^[0-9a-fA-F]{64}$/).parse(req.query.hash));
 
     const [ownContact, busUser, savedByEntries, mutualMatches] = await Promise.all([
       prisma.contactHash.findUnique({
@@ -174,7 +178,7 @@ contactsRouter.get('/search', async (req, res, next) => {
         inMyContacts,
         // Only expose the hash for people already in my address book (I already know their
         // number) so the app can show my local name for them. Never for strangers.
-        ...(inMyContacts ? { lookupHash: e.user.lookupHash } : {}),
+        ...(inMyContacts && e.user.lookupHash ? { lookupHash: openHash(e.user.lookupHash) } : {}),
       };
     });
     // My contacts first
@@ -197,14 +201,15 @@ contactsRouter.post('/bulk-lookup', async (req, res, next) => {
     const { hashes } = z.object({
       hashes: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(50),
     }).parse(req.body);
+    const sealed = hashes.map(sealHash);
 
     const [busUsers, contactEntries] = await Promise.all([
       prisma.user.findMany({
-        where: { lookupHash: { in: hashes } },
+        where: { lookupHash: { in: sealed } },
         select: { lookupHash: true, displayName: true, phoneHint: true },
       }),
       prisma.contactHash.findMany({
-        where: { contactHash: { in: hashes }, userId: { not: req.userId } },
+        where: { contactHash: { in: sealed }, userId: { not: req.userId } },
         include: { user: { select: { displayName: true, phoneHint: true } } },
         orderBy: { lastSyncedAt: 'desc' },
       }),
@@ -238,7 +243,8 @@ contactsRouter.post('/bulk-lookup', async (req, res, next) => {
       result[c.contactHash].savedBy.push(c.user.displayName || `…${c.user.phoneHint}`);
     }
 
-    res.json(result);
+    // Re-key by the client's own (decrypted) hash
+    res.json(Object.fromEntries(Object.entries(result).map(([k, v]) => [openHash(k), v])));
   } catch (err) { next(err); }
 });
 
